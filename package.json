@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "wire:local": "node ./scripts/wire.js",
+    "prepare": "husky install"
   },
   "repository": {
     "type": "git",
@@ -18,7 +20,20 @@
   },
   "homepage": "https://github.com/cheeseong2001/IS4302-Group4-Pawnshop#readme",
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
-    "hardhat": "^2.26.3"
+    "@nomicfoundation/hardhat-ignition": "^0.15.13",
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.26.3",
+    "husky": "^7.0.4",
+    "lint-staged": "^16.2.4",
+    "prettier": "^3.6.2"
+  },
+  "lint-staged": {
+    "**/*.js": "prettier --write",
+    "**/*.jsx": "prettier --write",
+    "**/*.ts": "prettier --write",
+    "**/*.tsx": "prettier --write",
+    "**/*.json": "prettier --write",
+    "**/*.css": "prettier --write",
+    "**/*.md": "prettier --write"
   }
 }
