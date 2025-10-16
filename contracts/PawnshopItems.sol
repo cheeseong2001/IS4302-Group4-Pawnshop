@@ -29,10 +29,10 @@ contract PawnshopItems {
     }
 
     // ---- Storage ----
-    mapping(uint256 => Item) private itemList;             
-    mapping(address => uint256[]) private ownerItems;     
-    mapping(address => uint256[]) private takerItems;     
-    uint256 private nextItemId;
+    mapping(uint256 => Item) internal itemList;             
+    mapping(address => uint256[]) internal ownerItems;     
+    mapping(address => uint256[]) internal takerItems;     
+    uint256 internal nextItemId;
 
     // ---- Getters ----
 
