@@ -17,4 +17,4 @@ node_modules
 ignition/deployments/chain-31337
 
 # Hardhat deployments
-/deployments/localhost/*
+/deployments
