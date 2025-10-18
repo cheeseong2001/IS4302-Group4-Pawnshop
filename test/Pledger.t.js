@@ -3,15 +3,24 @@ const { ethers } = require("hardhat");
 
 describe("Pledger Contract", function () {
   let pledger;
+  let pawnshopItems;
   let owner;
   let addr1;
   let addr2;
 
   beforeEach(async function () {
     [owner, addr1, addr2] = await ethers.getSigners();
-    
+
+    // Deploy PawnshopItems first
+    const PawnshopItems = await ethers.getContractFactory("PawnshopItems");
+    pawnshopItems = await PawnshopItems.deploy();
+
+    // Deploy Pledger with PawnshopItems address
     const Pledger = await ethers.getContractFactory("Pledger");
-    pledger = await Pledger.deploy();
+    pledger = await Pledger.deploy(pawnshopItems.target);
+
+    // Set Pledger as authorized pawnshop
+    await pawnshopItems.setAuthorizedPawnshop(pledger.target);
   });
 
   describe("createMyItem", function () {
@@ -22,7 +31,7 @@ describe("Pledger Contract", function () {
         itemPrice: ethers.parseEther("1.0"),
         redemptionPrice: ethers.parseEther("1.2"),
         punishmentPrice: ethers.parseEther("0.5"),
-        redemptionPeriod: 30
+        redemptionPeriod: 30,
       };
 
       const tx = await pledger.createMyItem(
@@ -35,16 +44,16 @@ describe("Pledger Contract", function () {
       );
 
       const receipt = await tx.wait();
-      
+
       // Check ItemCreated event
-      const event = receipt.logs.find(log => {
+      const event = receipt.logs.find((log) => {
         try {
           return pledger.interface.parseLog(log).name === "ItemCreated";
         } catch {
           return false;
         }
       });
-      
+
       expect(event).to.not.be.undefined;
       const parsedEvent = pledger.interface.parseLog(event);
       expect(parsedEvent.args.itemId).to.equal(1);
@@ -109,8 +118,12 @@ describe("Pledger Contract", function () {
     });
 
     it("Should return only owner's items", async function () {
-      await pledger.connect(owner).createMyItem("Owner Item", "url", 100, 120, 50, 30);
-      await pledger.connect(addr1).createMyItem("Addr1 Item", "url", 200, 220, 100, 60);
+      await pledger
+        .connect(owner)
+        .createMyItem("Owner Item", "url", 100, 120, 50, 30);
+      await pledger
+        .connect(addr1)
+        .createMyItem("Addr1 Item", "url", 200, 220, 100, 60);
 
       const ownerList = await pledger.connect(owner).getMyList();
       const addr1List = await pledger.connect(addr1).getMyList();
@@ -135,7 +148,7 @@ describe("Pledger Contract", function () {
         30
       );
       const receipt = await tx.wait();
-      const event = receipt.logs.find(log => {
+      const event = receipt.logs.find((log) => {
         try {
           return pledger.interface.parseLog(log).name === "ItemCreated";
         } catch {
@@ -152,7 +165,7 @@ describe("Pledger Contract", function () {
         itemPrice: ethers.parseEther("2.0"),
         redemptionPrice: ethers.parseEther("2.5"),
         punishmentPrice: ethers.parseEther("1.0"),
-        redemptionPeriod: 60
+        redemptionPeriod: 60,
       };
 
       await pledger.updateMyItem(itemId, updateData);
@@ -173,7 +186,7 @@ describe("Pledger Contract", function () {
         itemPrice: 100,
         redemptionPrice: 120,
         punishmentPrice: 50,
-        redemptionPeriod: 30
+        redemptionPeriod: 30,
       };
 
       await expect(pledger.updateMyItem(itemId, updateData))
@@ -188,7 +201,7 @@ describe("Pledger Contract", function () {
         itemPrice: 100,
         redemptionPrice: 120,
         punishmentPrice: 50,
-        redemptionPeriod: 30
+        redemptionPeriod: 30,
       };
 
       await expect(
@@ -200,19 +213,18 @@ describe("Pledger Contract", function () {
       // Manually change status (you'd need a function to do this in real scenario)
       // For this test, we'll assume the item stays LISTED
       // In a real scenario, you'd create a function to change status for testing
-      
+
       const updateData = {
         itemName: "Updated",
         itemUrl: "url",
         itemPrice: 100,
         redemptionPrice: 120,
         punishmentPrice: 50,
-        redemptionPeriod: 30
+        redemptionPeriod: 30,
       };
 
       // This should pass since item is LISTED
-      await expect(pledger.updateMyItem(itemId, updateData))
-        .to.not.be.reverted;
+      await expect(pledger.updateMyItem(itemId, updateData)).to.not.be.reverted;
     });
   });
 
@@ -229,7 +241,7 @@ describe("Pledger Contract", function () {
         30
       );
       const receipt = await tx.wait();
-      const event = receipt.logs.find(log => {
+      const event = receipt.logs.find((log) => {
         try {
           return pledger.interface.parseLog(log).name === "ItemCreated";
         } catch {
@@ -250,7 +262,7 @@ describe("Pledger Contract", function () {
 
     it("Should remove item from owner's list", async function () {
       await pledger.createMyItem("Item2", "url", 100, 120, 50, 30);
-      
+
       let myList = await pledger.getMyList();
       expect(myList.length).to.equal(2);
 
@@ -275,8 +287,7 @@ describe("Pledger Contract", function () {
 
     it("Should revert if item is not LISTED", async function () {
       // Similar to update test - assumes item stays LISTED
-      await expect(pledger.deleteMyItem(itemId))
-        .to.not.be.reverted;
+      await expect(pledger.deleteMyItem(itemId)).to.not.be.reverted;
     });
 
     it("Should handle deleting multiple items correctly", async function () {
@@ -301,7 +312,9 @@ describe("Pledger Contract", function () {
 
   describe("Modifiers", function () {
     it("itemOwnerOnly should block non-owners", async function () {
-      await pledger.connect(owner).createMyItem("Item", "url", 100, 120, 50, 30);
+      await pledger
+        .connect(owner)
+        .createMyItem("Item", "url", 100, 120, 50, 30);
 
       const updateData = {
         itemName: "Hacked",
@@ -309,16 +322,16 @@ describe("Pledger Contract", function () {
         itemPrice: 100,
         redemptionPrice: 120,
         punishmentPrice: 50,
-        redemptionPeriod: 30
+        redemptionPeriod: 30,
       };
 
       await expect(
         pledger.connect(addr1).updateMyItem(1, updateData)
       ).to.be.revertedWith("NotOwner");
 
-      await expect(
-        pledger.connect(addr1).deleteMyItem(1)
-      ).to.be.revertedWith("NotOwner");
+      await expect(pledger.connect(addr1).deleteMyItem(1)).to.be.revertedWith(
+        "NotOwner"
+      );
     });
   });
 
@@ -334,7 +347,7 @@ describe("Pledger Contract", function () {
         30
       );
       const receipt = await tx.wait();
-      const event = receipt.logs.find(log => {
+      const event = receipt.logs.find((log) => {
         try {
           return pledger.interface.parseLog(log).name === "ItemCreated";
         } catch {
@@ -353,7 +366,7 @@ describe("Pledger Contract", function () {
         itemPrice: ethers.parseEther("2.0"),
         redemptionPrice: ethers.parseEther("2.5"),
         punishmentPrice: ethers.parseEther("1.0"),
-        redemptionPeriod: 60
+        redemptionPeriod: 60,
       };
       await pledger.updateMyItem(itemId, updateData);
 
@@ -368,9 +381,15 @@ describe("Pledger Contract", function () {
     });
 
     it("Should handle multiple users creating items", async function () {
-      await pledger.connect(owner).createMyItem("Owner Item", "url1", 100, 120, 50, 30);
-      await pledger.connect(addr1).createMyItem("Addr1 Item", "url2", 200, 220, 100, 60);
-      await pledger.connect(addr2).createMyItem("Addr2 Item", "url3", 300, 320, 150, 90);
+      await pledger
+        .connect(owner)
+        .createMyItem("Owner Item", "url1", 100, 120, 50, 30);
+      await pledger
+        .connect(addr1)
+        .createMyItem("Addr1 Item", "url2", 200, 220, 100, 60);
+      await pledger
+        .connect(addr2)
+        .createMyItem("Addr2 Item", "url3", 300, 320, 150, 90);
 
       const ownerList = await pledger.connect(owner).getMyList();
       const addr1List = await pledger.connect(addr1).getMyList();
