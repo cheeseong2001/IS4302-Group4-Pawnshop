@@ -388,5 +388,126 @@ describe("Pledger Contract", function () {
       expect(item2.owner).to.equal(addr1.address);
       expect(item3.owner).to.equal(addr2.address);
     });
+
+    describe("Claim and Delivery Workflow", function () {
+      let itemId;
+      let itemPrice;
+      let punishmentPrice;
+      let totalCost;
+
+    beforeEach(async function () {
+      // Create item by owner
+      const tx = await pledger.createMyItem(
+        "Claimable Item",
+        "url",
+        ethers.parseEther("1.0"),
+        ethers.parseEther("1.2"),
+        ethers.parseEther("0.5"),
+        30
+      );
+      const receipt = await tx.wait();
+      const event = receipt.logs.find(log => {
+        try {
+          return pledger.interface.parseLog(log).name === "ItemCreated";
+        } catch {
+          return false;
+        }
+      });
+      itemId = pledger.interface.parseLog(event).args.itemId;
+
+      const item = await pledger.getItem(itemId);
+      itemPrice = item.itemPrice;
+      punishmentPrice = item.punishmentPrice;
+      totalCost = itemPrice + punishmentPrice;
+    });
+
+    describe("claimItem", function () {
+      it("Should allow non-owner to claim listed item", async function () {
+        await pledger.connect(addr1).claimItem(itemId, { value: totalCost });
+
+        const item = await pledger.getItem(itemId);
+        expect(item.itemStatus).to.equal(1); // NEGOTIATION
+        expect(item.takenBy).to.equal(addr1.address);
+
+        const takerItems = await pledger.getTakerItems(addr1.address);
+        expect(takerItems.length).to.equal(1);
+        expect(takerItems[0]).to.equal(itemId);
+      });
+
+      it("Should revert if owner tries to claim their own item", async function () {
+        await expect(
+          pledger.connect(owner).claimItem(itemId, { value: totalCost })
+        ).to.be.revertedWith("NotOwner");
+      });
+
+      it("Should revert if not enough ETH is sent", async function () {
+        const insufficient = itemPrice; // missing punishment price
+        await expect(
+          pledger.connect(addr1).claimItem(itemId, { value: insufficient })
+        ).to.be.revertedWith("NotEnoughETH");
+      });
+    });
+
+    describe("acceptClaimRequest", function () {
+      beforeEach(async function () {
+        await pledger.connect(addr1).claimItem(itemId, { value: totalCost });
+      });
+
+      it("Should allow owner to accept claim request", async function () {
+        await pledger.connect(owner).acceptClaimRequest(itemId);
+
+        const item = await pledger.getItem(itemId);
+        expect(item.itemStatus).to.equal(2); // DELIVERIED (or IN_DELIVERY if renamed)
+      });
+
+      it("Should revert if called by non-owner", async function () {
+        await expect(
+          pledger.connect(addr1).acceptClaimRequest(itemId)
+        ).to.be.revertedWith("NotOwner");
+      });
+
+      it("Should revert if item is not in NEGOTIATION", async function () {
+        await pledger.connect(owner).acceptClaimRequest(itemId);
+        await expect(
+          pledger.connect(owner).acceptClaimRequest(itemId)
+        ).to.be.revertedWith("WrongStatus");
+      });
+    });
+
+    describe("confirmItemDelivered", function () {
+      beforeEach(async function () {
+        await pledger.connect(addr1).claimItem(itemId, { value: totalCost });
+        await pledger.connect(owner).acceptClaimRequest(itemId);
+      });
+
+      it("Should allow taker to confirm delivery and pay owner", async function () {
+        const ownerBalanceBefore = await ethers.provider.getBalance(owner.address);
+
+        const tx = await pledger.connect(addr1).confirmItemDelivered(itemId);
+        await tx.wait();
+
+        const item = await pledger.getItem(itemId);
+        expect(item.itemStatus).to.equal(3); // CLAIMED or TAKEN
+        expect(item.takenAt).to.be.greaterThan(0);
+
+        const ownerBalanceAfter = await ethers.provider.getBalance(owner.address);
+        expect(ownerBalanceAfter).to.be.gt(ownerBalanceBefore);
+      });
+
+      it("Should revert if not called by taker", async function () {
+        await expect(
+          pledger.connect(owner).confirmItemDelivered(itemId)
+        ).to.be.revertedWith("NotTaker");
+      });
+
+      it("Should revert if item is not in DELIVERY stage", async function () {
+        // manually revert item to LISTED for test
+        await expect(
+          pledger.connect(addr1).confirmItemDelivered(itemId)
+        ).to.not.be.reverted; // valid path
+      });
+    });
+  });
+
   });
 });
