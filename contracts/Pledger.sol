@@ -40,7 +40,7 @@ contract Pledger {
     }
 
     // ---- Getters ----
-    function getMyList() external view returns (uint256[] memory) {
+    function getMyList() external view returns (PawnshopItems.Item[] memory) {
         return pawnshopItems.getOwnerItems(msg.sender);
     }
 
@@ -103,5 +103,6 @@ contract Pledger {
         pawnshopItems.deleteItem(itemId, msg.sender);
         emit ItemDeleted(itemId, msg.sender);
     }
+    
 }
 
