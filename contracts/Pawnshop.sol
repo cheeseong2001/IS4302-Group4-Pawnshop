@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
+import "./Pledger.sol";
+import "./Pawnbroker.sol";
 
-contract Pawnshop {
-    uint256 someVar;
+
+contract Pawnshop is Pledger, Pawnbroker {
     
-    function dummy() public pure returns (bool) {
-        return true;
+    constructor(PawnshopItems _pawnshopItems) 
+        Pledger(_pawnshopItems)
+        Pawnbroker(_pawnshopItems)
+    {
     }
+    
 }
-
