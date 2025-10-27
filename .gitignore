@@ -18,3 +18,5 @@ ignition/deployments/chain-31337
 
 # Hardhat deployments
 /deployments
+
+.DS_Store
