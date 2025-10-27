@@ -10,11 +10,15 @@ contract Pledger {
         pawnshopItems = _pawnshopItems;
     }
 
+    // ---- Events ----
     event ItemCreated(uint256 indexed itemId, address indexed owner);
     event ItemUpdated(uint256 indexed itemId, address indexed owner);
     event ItemDeleted(uint256 indexed itemId, address indexed owner);
+    event ItemClaimed(uint256 indexed itemId, address indexed taker);
+    event ClaimAccepted(uint256 indexed itemId, address indexed owner);
+    event ItemDelivered(uint256 indexed itemId, address indexed taker);
 
-    // ---- Struct for updating items ---- (Running out of space due to too many parameters)
+    // ---- Struct ----
     struct ItemUpdateData {
         string itemName;
         string itemUrl;
@@ -24,6 +28,7 @@ contract Pledger {
         uint256 redemptionPeriod;
     }
 
+    // ---- Modifiers ----
     modifier itemOwnerOnly(uint256 itemId) {
         require(pawnshopItems.isItemOwner(itemId, msg.sender), "NotOwner");
         _;
@@ -34,6 +39,7 @@ contract Pledger {
         _;
     }
 
+    // ---- Getters ----
     function getMyList() external view returns (uint256[] memory) {
         return pawnshopItems.getOwnerItems(msg.sender);
     }
@@ -42,6 +48,7 @@ contract Pledger {
         return pawnshopItems.getItem(itemId);
     }
 
+    // ---- Item Management ----
     function createMyItem(
         string calldata itemName,
         string calldata itemUrl,
@@ -55,7 +62,6 @@ contract Pledger {
         pawnshopItems.incrementNextItemId();
         uint256 id = currentId + 1;
 
-        // Call PawnshopItems function to create item
         pawnshopItems.createItem(
             id,
             msg.sender,
@@ -68,14 +74,14 @@ contract Pledger {
         );
 
         emit ItemCreated(id, msg.sender);
-
         return pawnshopItems.getItem(id);
     }
 
-    function updateMyItem(uint256 itemId, ItemUpdateData memory data) external 
-    itemOwnerOnly(itemId) onlyItemStatus(itemId, PawnshopItems.ItemStatus.LISTED) {
-        
-        // Call PawnshopItems function to update item
+    function updateMyItem(uint256 itemId, ItemUpdateData memory data)
+        external
+        itemOwnerOnly(itemId)
+        onlyItemStatus(itemId, PawnshopItems.ItemStatus.LISTED)
+    {
         pawnshopItems.updateItem(
             itemId,
             data.itemName,
@@ -89,11 +95,13 @@ contract Pledger {
         emit ItemUpdated(itemId, msg.sender);
     }
 
-    function deleteMyItem(uint256 itemId) public itemOwnerOnly(itemId) onlyItemStatus(itemId, PawnshopItems.ItemStatus.LISTED) {
-
-        // Call PawnshopItems function to delete item
+    function deleteMyItem(uint256 itemId)
+        public
+        itemOwnerOnly(itemId)
+        onlyItemStatus(itemId, PawnshopItems.ItemStatus.LISTED)
+    {
         pawnshopItems.deleteItem(itemId, msg.sender);
-
         emit ItemDeleted(itemId, msg.sender);
     }
 }
+
