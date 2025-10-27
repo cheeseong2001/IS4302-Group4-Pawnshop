@@ -30,4 +30,10 @@ contract PawnshopCommon {
     {
         return pawnStorageContract.getAllItems();
     }
+
+    function getItem(
+        uint256 itemId
+    ) public view returns (PawnStorage.PawnItem memory) {
+        return pawnStorageContract.getItem(itemId);
+    }
 }
