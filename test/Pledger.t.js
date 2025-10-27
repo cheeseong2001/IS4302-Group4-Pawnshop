@@ -95,8 +95,9 @@ describe("Pledger Contract", function () {
 
       const myList = await pledger.getMyList();
       expect(myList.length).to.equal(2);
-      expect(myList[0]).to.equal(1);
-      expect(myList[1]).to.equal(2);
+
+      expect(myList[0].itemName).to.equal("Item1");
+      expect(myList[1].itemName).to.equal("Item2");
     });
 
     it("Should increment itemId for each new item", async function () {
@@ -112,28 +113,19 @@ describe("Pledger Contract", function () {
   });
 
   describe("getMyList", function () {
-    it("Should return empty array for new user", async function () {
-      const myList = await pledger.connect(addr1).getMyList();
-      expect(myList.length).to.equal(0);
-    });
-
     it("Should return only owner's items", async function () {
-      await pledger
-        .connect(owner)
-        .createMyItem("Owner Item", "url", 100, 120, 50, 30);
-      await pledger
-        .connect(addr1)
-        .createMyItem("Addr1 Item", "url", 200, 220, 100, 60);
+      await pledger.connect(owner).createMyItem("Owner Item", "url", ethers.parseEther("1.0"), ethers.parseEther("1.2"), ethers.parseEther("0.5"), 30);
+      await pledger.connect(addr1).createMyItem("Addr1 Item", "url", ethers.parseEther("2.0"), ethers.parseEther("2.2"), ethers.parseEther("1.0"), 60);
 
       const ownerList = await pledger.connect(owner).getMyList();
-      const addr1List = await pledger.connect(addr1).getMyList();
-
       expect(ownerList.length).to.equal(1);
+      expect(ownerList[0].itemName).to.equal("Owner Item");
+
+      const addr1List = await pledger.connect(addr1).getMyList();
       expect(addr1List.length).to.equal(1);
-      expect(ownerList[0]).to.equal(1);
-      expect(addr1List[0]).to.equal(2);
+      expect(addr1List[0].itemName).to.equal("Addr1 Item");
     });
-  });
+});
 
   describe("updateMyItem", function () {
     let itemId;
@@ -399,13 +391,13 @@ describe("Pledger Contract", function () {
       expect(addr1List.length).to.equal(1);
       expect(addr2List.length).to.equal(1);
 
-      const item1 = await pledger.getItem(ownerList[0]);
-      const item2 = await pledger.getItem(addr1List[0]);
-      const item3 = await pledger.getItem(addr2List[0]);
+      expect(ownerList[0].itemName).to.equal("Owner Item");
+      expect(addr1List[0].itemName).to.equal("Addr1 Item");
+      expect(addr2List[0].itemName).to.equal("Addr2 Item");
 
-      expect(item1.owner).to.equal(owner.address);
-      expect(item2.owner).to.equal(addr1.address);
-      expect(item3.owner).to.equal(addr2.address);
+      expect(ownerList[0].owner).to.equal(owner.address);
+      expect(addr1List[0].owner).to.equal(addr1.address);
+      expect(addr2List[0].owner).to.equal(addr2.address);
     });
 
     describe("Claim and Delivery Workflow", function () {

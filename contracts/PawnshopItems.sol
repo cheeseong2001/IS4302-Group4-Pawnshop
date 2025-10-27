@@ -90,10 +90,18 @@ contract PawnshopItems {
         return (item.itemPrice, item.redemptionPrice, item.punishmentPrice);
     }
 
-    /// @notice Get owner's listed item IDs
-    function getOwnerItems(address ownerAddress) external view returns (uint256[] memory) {
-        return ownerItems[ownerAddress];
+    /// @notice Get owner's listed items
+    function getOwnerItems(address ownerAddress) external view returns (Item[] memory) {
+        uint256[] memory itemIds = ownerItems[ownerAddress];
+        Item[] memory items = new Item[](itemIds.length);
+
+        for (uint256 i = 0; i < itemIds.length; i++) {
+            items[i] = itemList[itemIds[i]];  
+        }
+
+        return items;
     }
+
 
     /// @notice Get taker's taken item IDs
     function getTakerItems(address _taker) external view returns (uint256[] memory) {

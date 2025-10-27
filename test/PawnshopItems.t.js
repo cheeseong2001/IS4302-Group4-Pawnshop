@@ -75,8 +75,16 @@ describe("PawnshopItems", function () {
     expect(typeof punishment).to.equal("bigint");
 
     // 7. getOwnerItems
-    const ownerItems = await pawnshop.getOwnerItems(owner.address);
-    expect(Array.isArray(ownerItems)).to.be.true;
+    it("Should return an array of items for the owner", async function () {
+      await pledger.connect(owner).createMyItem("Owner Item", "url", ethers.parseEther("1.0"), ethers.parseEther("1.2"), ethers.parseEther("0.5"), 30);
+
+      const ownerItems = await pawnshopItems.getOwnerItems(owner.address);
+
+      expect(Array.isArray(ownerItems)).to.be.true;
+      expect(ownerItems.length).to.equal(1);
+      expect(ownerItems[0].itemName).to.equal("Owner Item");
+      expect(ownerItems[0].itemStatus).to.equal(0); // LISTED
+    });
 
     // 8. getTakerItems
     const takerItems = await pawnshop.getTakerItems(addr1.address);
