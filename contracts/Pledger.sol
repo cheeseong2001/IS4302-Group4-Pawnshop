@@ -24,24 +24,30 @@ contract Pledger is PawnshopCommon {
         uint256 redemptionPeriod;
     }
 
-    constructor(
-        address _pawnStorageAddress
-    ) PawnshopCommon(_pawnStorageAddress) {}
+    constructor(address _pawnStorageAddress) PawnshopCommon(_pawnStorageAddress) {}
 
     // ---- Modifiers ----
     modifier itemOwnerOnly(uint256 itemId) {
+        require(pawnStorageContract.getItemOwner(itemId) == msg.sender, "Sender must be the item owner");
+        _;
+    }
+
+    modifier duringRedemptionPeriod(uint256 itemId) {
+        uint256 currentTime = block.timestamp;
+        uint256 claimedTime = pawnStorageContract.getTakenAt(itemId);
+        uint256 redemptionPeriod = pawnStorageContract.getRedemptionPeriod(itemId);
         require(
-            pawnStorageContract.getItemOwner(itemId) == msg.sender,
-            "Sender must be the item owner"
+            claimedTime < currentTime && currentTime <= claimedTime + redemptionPeriod,
+            "Cannot redeem item outside of redemption period"
         );
         _;
     }
 
+    // ---- Item Management ----
     function getMyList() external view returns (PawnStorage.PawnItem[] memory) {
         return pawnStorageContract.getItemsByOwner(msg.sender);
     }
 
-    // ---- Item Management ----
     function createMyItem(
         string calldata itemName,
         string calldata itemUrl,
@@ -50,6 +56,7 @@ contract Pledger is PawnshopCommon {
         uint256 punishmentPrice,
         uint256 redemptionPeriod
     ) public returns (PawnStorage.PawnItem memory) {
+        require(redemptionPrice > itemPrice, "Redemption price must be higher than item price to benefit Pawnbroker");
         uint256 newItemId = pawnStorageContract.createItem(
             msg.sender,
             itemName,
@@ -72,16 +79,15 @@ contract Pledger is PawnshopCommon {
         itemStatusIs(itemId, PawnStorage.ItemStatus.LISTED)
         returns (PawnStorage.PawnItem memory)
     {
-        PawnStorage.PawnItem memory updatedItem = pawnStorageContract
-            .updateItem(
-                itemId,
-                newData.itemName,
-                newData.itemUrl,
-                newData.itemPrice,
-                newData.redemptionPrice,
-                newData.punishmentPrice,
-                newData.redemptionPeriod
-            );
+        PawnStorage.PawnItem memory updatedItem = pawnStorageContract.updateItem(
+            itemId,
+            newData.itemName,
+            newData.itemUrl,
+            newData.itemPrice,
+            newData.redemptionPrice,
+            newData.punishmentPrice,
+            newData.redemptionPeriod
+        );
 
         emit ItemUpdated(itemId, msg.sender);
         return updatedItem;
@@ -89,12 +95,67 @@ contract Pledger is PawnshopCommon {
 
     function deleteMyItem(
         uint256 itemId
-    )
-        public
-        itemOwnerOnly(itemId)
-        itemStatusIs(itemId, PawnStorage.ItemStatus.LISTED)
-    {
+    ) public itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.LISTED) {
         pawnStorageContract.deleteItem(itemId);
         emit ItemDeleted(itemId, msg.sender);
+    }
+
+    function acceptClaim(
+        uint256 itemId
+    ) public itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_NEGOTIATION) {
+        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_DELIVERY);
+
+        // Moved the taker details to the Pawnbroker side -> have to ensure pawnbroker receives the item first
+        // address otherParty = pawnStorageContract.getOtherParty(itemId);
+        // pawnStorageContract.setTakenBy(itemId, otherParty);
+        // pawnStorageContract.setTakenAt(itemId, block.timestamp);
+    }
+
+    function rejectClaim(
+        uint256 itemId
+    ) public itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_NEGOTIATION) {
+        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.LISTED);
+        address otherParty = pawnStorageContract.getOtherParty(itemId);
+        pawnStorageContract.setOtherParty(itemId, address(0));
+
+        // return the amount he sent
+        (uint256 price, , uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
+
+        (bool success, ) = payable(otherParty).call{value: price + punishment}("");
+        require(success, "Transfer failed");
+    }
+
+    function redeemItem(
+        uint256 itemId
+    )
+        external
+        payable
+        itemOwnerOnly(itemId)
+        itemStatusIs(itemId, PawnStorage.ItemStatus.CLAIMED)
+        duringRedemptionPeriod(itemId)
+    {
+        (, uint256 redemption, ) = pawnStorageContract.getItemPrices(itemId);
+
+        require(msg.value >= redemption, "Insufficient ether to redeem");
+
+        uint256 toReturn = msg.value - redemption;
+        if (toReturn > 0) {
+            (bool success, ) = payable(msg.sender).call{value: toReturn}("");
+            require(success, "Transfer failed");
+        }
+
+        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_REDEMPTION);
+    }
+
+    function confirmItemDelivered(
+        uint256 itemId
+    ) external itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_DELIVERY_RETURN) {
+        (, uint256 redemption, uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
+        address itemTaker = pawnStorageContract.getItemTaker(itemId);
+
+        (bool success, ) = payable(itemTaker).call{value: redemption + punishment}("");
+        require(success, "Transfer failed");
+
+        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.RETURNED);
     }
 }
