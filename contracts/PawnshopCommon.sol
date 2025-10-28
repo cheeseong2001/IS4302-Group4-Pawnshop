@@ -12,28 +12,20 @@ contract PawnshopCommon {
         owner = msg.sender;
     }
 
-    modifier itemStatusIs(
-        uint256 itemId,
-        PawnStorage.ItemStatus requiredStatus
-    ) {
-        require(
-            pawnStorageContract.getItemStatus(itemId) == requiredStatus,
-            "Item status incorrect"
-        );
+    modifier itemStatusIs(uint256 itemId, PawnStorage.ItemStatus requiredStatus) {
+        require(pawnStorageContract.getItemStatus(itemId) == requiredStatus, "Item status incorrect");
         _;
     }
 
-    function getPublicList()
-        external
-        view
-        returns (PawnStorage.PawnItem[] memory)
-    {
+    function getPublicList() external view returns (PawnStorage.PawnItem[] memory) {
         return pawnStorageContract.getAllItems();
     }
 
-    function getItem(
-        uint256 itemId
-    ) public view returns (PawnStorage.PawnItem memory) {
+    function getItem(uint256 itemId) public view returns (PawnStorage.PawnItem memory) {
         return pawnStorageContract.getItem(itemId);
+    }
+
+    function setStatus(uint256 itemId, PawnStorage.ItemStatus newStatus) internal {
+        pawnStorageContract.setStatus(itemId, newStatus);
     }
 }
