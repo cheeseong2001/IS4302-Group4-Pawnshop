@@ -7,9 +7,6 @@ contract Pledger is PawnshopCommon {
     event ItemCreated(uint256 indexed itemId, address indexed owner);
     event ItemUpdated(uint256 indexed itemId, address indexed owner);
     event ItemDeleted(uint256 indexed itemId, address indexed owner);
-    // event ItemClaimed(uint256 indexed itemId, address indexed taker);
-    // event ClaimAccepted(uint256 indexed itemId, address indexed owner);
-    // event ItemDelivered(uint256 indexed itemId, address indexed taker);
     event ItemClaimed(uint256 indexed itemId, address indexed taker);
     event ClaimAccepted(uint256 indexed itemId, address indexed owner);
     event ItemDelivered(uint256 indexed itemId, address indexed taker);
@@ -24,7 +21,11 @@ contract Pledger is PawnshopCommon {
         uint256 redemptionPeriod;
     }
 
-    constructor(address _pawnStorageAddress) PawnshopCommon(_pawnStorageAddress) {}
+    address public pawnbrokerContract;
+
+    constructor(address _pawnStorageAddress, address _pawnbrokerAddress) PawnshopCommon(_pawnStorageAddress) {
+        pawnbrokerContract = _pawnbrokerAddress;
+    }
 
     // ---- Modifiers ----
     modifier itemOwnerOnly(uint256 itemId) {
@@ -111,18 +112,22 @@ contract Pledger is PawnshopCommon {
         // pawnStorageContract.setTakenAt(itemId, block.timestamp);
     }
 
-    function rejectClaim(
-        uint256 itemId
-    ) public itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_NEGOTIATION) {
-        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.LISTED);
-        address otherParty = pawnStorageContract.getOtherParty(itemId);
-        pawnStorageContract.setOtherParty(itemId, address(0));
+    // function rejectClaim(
+    //     uint256 itemId
+    // ) public itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_NEGOTIATION) {
+    //     pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.LISTED);
+    //     pawnStorageContract.setOtherParty(itemId, address(0));
 
-        // return the amount he sent
-        (uint256 price, , uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
+    //     // return the amount he sent
+    //     (uint256 price, , uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
 
-        (bool success, ) = payable(otherParty).call{value: price + punishment}("");
-        require(success, "Transfer failed");
+    //     (bool success, ) = payable(otherParty).call{value: price + punishment}("");
+    //     require(success, "Transfer failed");
+    // }
+
+    function transferToPawnbrokerContract(uint256 amount) internal {
+        (bool success, ) = payable(pawnbrokerContract).call{value: amount}("");
+        require(success, "Transfer to pawnbroker contract failed");
     }
 
     function redeemItem(
@@ -145,6 +150,7 @@ contract Pledger is PawnshopCommon {
         }
 
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_REDEMPTION);
+        transferToPawnbrokerContract(redemption);
     }
 
     function confirmItemDelivered(

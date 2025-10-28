@@ -33,7 +33,6 @@ contract Pawnbroker is PawnshopCommon {
     function startClaimProcess(uint256 itemId) internal {
         // Helper function to update details upon claim request
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_NEGOTIATION);
-
         pawnStorageContract.setOtherParty(itemId, msg.sender);
     }
 
@@ -73,5 +72,9 @@ contract Pawnbroker is PawnshopCommon {
     ) external itemTakerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_REDEMPTION) {
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_DELIVERY_RETURN);
         pawnStorageContract.removeItemIdFromTakerList(itemId);
+    }
+
+    receive() external payable {
+        // pawnbroker contract will the main point of contact for releasing eth
     }
 }
