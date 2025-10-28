@@ -55,8 +55,8 @@ describe("Pledger Contract", function () {
   describe("test Pawnbroker claim", function () {
     it("Should be able to request to claim item", async function () {
       await deployedPawnbroker.connect(addr1).claimItem(itemId, { value: totalCost });
-      const item = await deployedPawnbroker.connect(addr1).getItem(itemId);
-      expect(item.itemStatus).to.be.equal(1); // status should be IN_NEGOTIATION
+      const itemStatus = await deployedPawnStorage.getItemStatus(itemId);
+      expect(itemStatus).to.be.equal(1); // status should be IN_NEGOTIATION
 
       const balance = await ethers.provider.getBalance(pawnbrokerAddress);
       expect(balance).to.be.equal(totalCost);
@@ -75,6 +75,31 @@ describe("Pledger Contract", function () {
 
       const balance = await ethers.provider.getBalance(pawnbrokerAddress);
       expect(balance).to.be.equal(totalCost);
+    });
+
+    it("Should be able to withdraw claim after claim declaration", async function () {
+      const tx1 = await deployedPawnbroker.connect(addr1).claimItem(itemId, { value: totalCost });
+      await tx1.wait();
+
+      const itemStatus = await deployedPawnStorage.getItemStatus(itemId);
+      expect(itemStatus).to.be.equal(1); // status should be IN_NEGOTIATION
+
+      const addr1BalanceBeforeWithdraw = await ethers.provider.getBalance(addr1);
+
+      const tx2 = await deployedPawnbroker.connect(addr1).withdrawClaim(itemId);
+      const receipt = await tx2.wait();
+      const contractBalanceAfterWithdraw = await ethers.provider.getBalance(pawnbrokerAddress);
+      expect(contractBalanceAfterWithdraw).to.be.equal(0);
+
+      // calculate addr1 change in amount should only be gas
+      const addr1BalanceAfterWithdraw = await ethers.provider.getBalance(addr1);
+      const gasUsed = BigInt(receipt.gasUsed);
+      const gasPrice = BigInt(tx2.gasPrice);
+      const gasCost = gasUsed * gasPrice;
+
+      expect(addr1BalanceAfterWithdraw).to.be.equal(
+        addr1BalanceBeforeWithdraw - gasCost + totalCost
+      );
     });
   });
 
@@ -119,7 +144,7 @@ describe("Pledger Contract", function () {
       await deployedPawnbroker.connect(addr1).returnItem(itemId);
       const item = await deployedPawnbroker.connect(addr1).getItem(itemId);
       expect(item.itemStatus).to.be.equal(5);
-      
+
       const takerList = await deployedPawnbroker.connect(addr1).getMyClaimedList();
       expect(takerList.length).to.be.equal(0);
     });
