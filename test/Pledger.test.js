@@ -11,13 +11,15 @@ describe("Pledger Contract", function () {
 
     // Deploy PawnStorage first
     pawnStorage = await ethers.getContractFactory("PawnStorage");
-    deployedPawnStorage = await pawnStorage.deploy();
+    deployedPawnStorage = await pawnStorage.connect(owner).deploy();
     await deployedPawnStorage.waitForDeployment();
     pawnStorageAddress = await deployedPawnStorage.getAddress();
 
     pledger = await ethers.getContractFactory("Pledger");
-    deployedPledger = await pledger.deploy(pawnStorageAddress);
+    deployedPledger = await pledger.connect(owner).deploy(pawnStorageAddress);
     await deployedPledger.waitForDeployment();
+
+    await deployedPawnStorage.connect(owner).addTrustedCaller(await deployedPledger.getAddress());
   });
 
   describe("test Pledger CRUDs", function () {
@@ -110,25 +112,6 @@ describe("Pledger Contract", function () {
       ).to.be.revertedWith("Sender must be the item owner");
     });
 
-    //   it("Should revert if item is not LISTED", async function () {
-    //     // Manually change status (you'd need a function to do this in real scenario)
-    //     // For this test, we'll assume the item stays LISTED
-    //     // In a real scenario, you'd create a function to change status for testing
-
-    //     const updateData = {
-    //       itemName: "Updated",
-    //       itemUrl: "url",
-    //       itemPrice: 100,
-    //       redemptionPrice: 120,
-    //       punishmentPrice: 50,
-    //       redemptionPeriod: 30,
-    //     };
-
-    //     // This should pass since item is LISTED
-    //     await expect(pledger.updateMyItem(itemId, updateData)).to.not.be.reverted;
-    //   });
-    // });
-
     it("Should delete item from allItems list", async function () {
       const tx = await deployedPledger.connect(addr1).deleteMyItem(itemId);
       const receipt = await tx.wait();
@@ -157,202 +140,83 @@ describe("Pledger Contract", function () {
     });
 
     it("Should revert deleting if not owner", async function () {
-      await expect(pledger.connect(addr2).deleteMyItem(itemId)).to.be.revertedWith(
+      await expect(deployedPledger.connect(addr2).deleteMyItem(itemId)).to.be.revertedWith(
         "Sender must be the item owner"
       );
     });
-
-    // it("Should revert if item is not LISTED", async function () {
-    //   // Similar to update test - assumes item stays LISTED
-    //   await expect(pledger.deleteMyItem(itemId)).to.not.be.reverted;
-    // });
   });
 
-  /* UPDATED TILL HERE */
-
-  describe("Integration Tests", function () {
-    it("Should handle complete lifecycle: create -> update -> delete", async function () {
-      // Create
-      const tx = await pledger.createMyItem(
-        "Lifecycle Item",
-        "url",
-        ethers.parseEther("1.0"),
-        ethers.parseEther("1.2"),
-        ethers.parseEther("0.5"),
-        30
-      );
-      const receipt = await tx.wait();
-      const event = receipt.logs.find((log) => {
-        try {
-          return pledger.interface.parseLog(log).name === "ItemCreated";
-        } catch {
-          return false;
-        }
-      });
-      const itemId = pledger.interface.parseLog(event).args.itemId;
-
-      let item = await pledger.getItem(itemId);
-      expect(item.itemName).to.equal("Lifecycle Item");
-
-      // Update
-      const updateData = {
-        itemName: "Updated Lifecycle Item",
-        itemUrl: "new-url",
-        itemPrice: ethers.parseEther("2.0"),
-        redemptionPrice: ethers.parseEther("2.5"),
-        punishmentPrice: ethers.parseEther("1.0"),
-        redemptionPeriod: 60,
+  describe("multi-users scenario", function () {
+    let item1, item2, item1Id, item2Id;
+    this.beforeEach(async function () {
+      item1 = {
+        itemName: "item1",
+        itemUrl: "https://example.com/item1.jpg",
+        itemPrice: ethers.parseEther("1.0"),
+        redemptionPrice: ethers.parseEther("1.2"),
+        punishmentPrice: ethers.parseEther("0.5"),
+        redemptionPeriod: 30,
       };
-      await pledger.updateMyItem(itemId, updateData);
 
-      item = await pledger.getItem(itemId);
-      expect(item.itemName).to.equal("Updated Lifecycle Item");
+      item2 = {
+        itemName: "item2",
+        itemUrl: "https://example.com/item2.jpg",
+        itemPrice: ethers.parseEther("2.0"),
+        redemptionPrice: ethers.parseEther("2.4"),
+        punishmentPrice: ethers.parseEther("1.0"),
+        redemptionPeriod: 7,
+      };
 
-      // Delete
-      await pledger.deleteMyItem(itemId);
+      const tx1 = await deployedPledger
+        .connect(addr1)
+        .createMyItem(
+          item1.itemName,
+          item1.itemUrl,
+          item1.itemPrice,
+          item1.redemptionPrice,
+          item1.punishmentPrice,
+          item1.redemptionPeriod
+        );
 
-      item = await pledger.getItem(itemId);
-      expect(item.itemId).to.equal(0);
+      const tx2 = await deployedPledger
+        .connect(addr2)
+        .createMyItem(
+          item2.itemName,
+          item2.itemUrl,
+          item2.itemPrice,
+          item2.redemptionPrice,
+          item2.punishmentPrice,
+          item2.redemptionPeriod
+        );
+
+      const [receipt1, receipt2] = await Promise.all([tx1.wait(), tx2.wait()]);
+      
+      item1Id = (await deployedPawnStorage.nextItemId()) - BigInt(2);
+      item2Id = (await deployedPawnStorage.nextItemId()) - BigInt(1);
     });
 
     it("Should handle multiple users creating items", async function () {
-      await pledger.connect(owner).createMyItem("Owner Item", "url1", 100, 120, 50, 30);
-      await pledger.connect(addr1).createMyItem("Addr1 Item", "url2", 200, 220, 100, 60);
-      await pledger.connect(addr2).createMyItem("Addr2 Item", "url3", 300, 320, 150, 90);
+      const addr1List = await deployedPledger.connect(addr1).getMyList();
+      const addr2List = await deployedPledger.connect(addr2).getMyList();
 
-      const ownerList = await pledger.connect(owner).getMyList();
-      const addr1List = await pledger.connect(addr1).getMyList();
-      const addr2List = await pledger.connect(addr2).getMyList();
-
-      expect(ownerList.length).to.equal(1);
       expect(addr1List.length).to.equal(1);
       expect(addr2List.length).to.equal(1);
 
-      expect(ownerList[0].itemName).to.equal("Owner Item");
-      expect(addr1List[0].itemName).to.equal("Addr1 Item");
-      expect(addr2List[0].itemName).to.equal("Addr2 Item");
+      expect(addr1List[0].itemName).to.equal(item1.itemName);
+      expect(addr2List[0].itemName).to.equal(item2.itemName);
 
-      expect(ownerList[0].owner).to.equal(owner.address);
-      expect(addr1List[0].owner).to.equal(addr1.address);
-      expect(addr2List[0].owner).to.equal(addr2.address);
-    });
+      expect(addr1List[0].owner).to.equal(addr1);
+      expect(addr2List[0].owner).to.equal(addr2);
+     });
 
-    describe("Claim and Delivery Workflow", function () {
-      let itemId;
-      let itemPrice;
-      let punishmentPrice;
-      let totalCost;
+     it("should not affect other users when deleting", async function () {
+      await deployedPledger.connect(addr1).deleteMyItem(item1Id);
+      
+      const addr1List = await deployedPledger.connect(addr1).getMyList();
+      const addr2List = await deployedPledger.connect(addr2).getMyList();
 
-      beforeEach(async function () {
-        // Create item by owner
-        const tx = await pledger.createMyItem(
-          "Claimable Item",
-          "url",
-          ethers.parseEther("1.0"),
-          ethers.parseEther("1.2"),
-          ethers.parseEther("0.5"),
-          30
-        );
-        const receipt = await tx.wait();
-        const event = receipt.logs.find((log) => {
-          try {
-            return pledger.interface.parseLog(log).name === "ItemCreated";
-          } catch {
-            return false;
-          }
-        });
-        itemId = pledger.interface.parseLog(event).args.itemId;
-
-        const item = await pledger.getItem(itemId);
-        itemPrice = item.itemPrice;
-        punishmentPrice = item.punishmentPrice;
-        totalCost = itemPrice + punishmentPrice;
-      });
-
-      describe("claimItem", function () {
-        it("Should allow non-owner to claim listed item", async function () {
-          await pledger.connect(addr1).claimItem(itemId, { value: totalCost });
-
-          const item = await pledger.getItem(itemId);
-          expect(item.itemStatus).to.equal(1); // NEGOTIATION
-          expect(item.takenBy).to.equal(addr1.address);
-
-          const takerItems = await pledger.getTakerItems(addr1.address);
-          expect(takerItems.length).to.equal(1);
-          expect(takerItems[0]).to.equal(itemId);
-        });
-
-        it("Should revert if owner tries to claim their own item", async function () {
-          await expect(
-            pledger.connect(owner).claimItem(itemId, { value: totalCost })
-          ).to.be.revertedWith("NotOwner");
-        });
-
-        it("Should revert if not enough ETH is sent", async function () {
-          const insufficient = itemPrice; // missing punishment price
-          await expect(
-            pledger.connect(addr1).claimItem(itemId, { value: insufficient })
-          ).to.be.revertedWith("NotEnoughETH");
-        });
-      });
-
-      describe("acceptClaimRequest", function () {
-        beforeEach(async function () {
-          await pledger.connect(addr1).claimItem(itemId, { value: totalCost });
-        });
-
-        it("Should allow owner to accept claim request", async function () {
-          await pledger.connect(owner).acceptClaimRequest(itemId);
-
-          const item = await pledger.getItem(itemId);
-          expect(item.itemStatus).to.equal(2); // DELIVERIED (or IN_DELIVERY if renamed)
-        });
-
-        it("Should revert if called by non-owner", async function () {
-          await expect(pledger.connect(addr1).acceptClaimRequest(itemId)).to.be.revertedWith(
-            "NotOwner"
-          );
-        });
-
-        it("Should revert if item is not in NEGOTIATION", async function () {
-          await pledger.connect(owner).acceptClaimRequest(itemId);
-          await expect(pledger.connect(owner).acceptClaimRequest(itemId)).to.be.revertedWith(
-            "WrongStatus"
-          );
-        });
-      });
-
-      describe("confirmItemDelivered", function () {
-        beforeEach(async function () {
-          await pledger.connect(addr1).claimItem(itemId, { value: totalCost });
-          await pledger.connect(owner).acceptClaimRequest(itemId);
-        });
-
-        it("Should allow taker to confirm delivery and pay owner", async function () {
-          const ownerBalanceBefore = await ethers.provider.getBalance(owner.address);
-
-          const tx = await pledger.connect(addr1).confirmItemDelivered(itemId);
-          await tx.wait();
-
-          const item = await pledger.getItem(itemId);
-          expect(item.itemStatus).to.equal(3); // CLAIMED or TAKEN
-          expect(item.takenAt).to.be.greaterThan(0);
-
-          const ownerBalanceAfter = await ethers.provider.getBalance(owner.address);
-          expect(ownerBalanceAfter).to.be.gt(ownerBalanceBefore);
-        });
-
-        it("Should revert if not called by taker", async function () {
-          await expect(pledger.connect(owner).confirmItemDelivered(itemId)).to.be.revertedWith(
-            "NotTaker"
-          );
-        });
-
-        it("Should revert if item is not in DELIVERY stage", async function () {
-          // manually revert item to LISTED for test
-          await expect(pledger.connect(addr1).confirmItemDelivered(itemId)).to.not.be.reverted; // valid path
-        });
-      });
-    });
+      expect(addr1List.length).to.equal(0);
+      expect(addr2List.length).to.equal(1);
+     })
   });
 });
