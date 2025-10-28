@@ -74,6 +74,25 @@ contract Pawnbroker is PawnshopCommon {
         pawnStorageContract.removeItemIdFromTakerList(itemId);
     }
 
+    function claimAmount(uint256 itemId) external itemTakerOnly(itemId) {
+        PawnStorage.ItemStatus itemStatus = pawnStorageContract.getItemStatus(itemId);
+        require(
+            itemStatus == PawnStorage.ItemStatus.IN_NEGOTIATION || itemStatus == PawnStorage.ItemStatus.RETURNED,
+            "Claim not allowed for this item status"
+        );
+
+        (uint256 price, uint256 redemption, uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
+        if (itemStatus == PawnStorage.ItemStatus.IN_NEGOTIATION) {
+            (bool success, ) = payable(msg.sender).call{value: price + punishment}("");
+            require(success, "Transfer failed");
+            pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.LISTED);
+        } else if (itemStatus == PawnStorage.ItemStatus.RETURNED) {
+            (bool success, ) = payable(msg.sender).call{value: redemption + punishment}("");
+            require(success, "Transfer failed");
+            pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.END_OF_TRANSACTION);
+        }
+    }
+
     receive() external payable {
         // pawnbroker contract will the main point of contact for releasing eth
     }
