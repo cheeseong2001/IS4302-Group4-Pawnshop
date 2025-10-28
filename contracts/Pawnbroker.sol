@@ -16,6 +16,11 @@ contract Pawnbroker is PawnshopCommon {
         _;
     }
 
+    modifier claimInitiatorOnly(uint256 itemId) {
+        require(pawnStorageContract.getOtherParty(itemId) == msg.sender, "Sender must be the claim initiator");
+        _;
+    }
+
     modifier notItemOwner(uint256 itemId) {
         require(pawnStorageContract.getItemOwner(itemId) != msg.sender, "Taker must not be the item owner");
         _;
@@ -48,7 +53,9 @@ contract Pawnbroker is PawnshopCommon {
         startClaimProcess(itemId);
     }
 
-    function confirmItemDelivered(uint256 itemId) external itemStatusIs(itemId, PawnStorage.ItemStatus.IN_DELIVERY) {
+    function confirmItemDelivered(
+        uint256 itemId
+    ) external claimInitiatorOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_DELIVERY) {
         (uint256 price, , ) = pawnStorageContract.getItemPrices(itemId);
         address itemOwner = pawnStorageContract.getItemOwner(itemId);
 
@@ -58,11 +65,13 @@ contract Pawnbroker is PawnshopCommon {
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.CLAIMED);
         pawnStorageContract.setTakenBy(itemId, msg.sender);
         pawnStorageContract.setTakenAt(itemId, block.timestamp);
+        pawnStorageContract.addItemIdToTakerList(itemId);
     }
 
     function returnItem(
         uint256 itemId
     ) external itemTakerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_REDEMPTION) {
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_DELIVERY_RETURN);
+        pawnStorageContract.removeItemIdFromTakerList(itemId);
     }
 }
