@@ -7,7 +7,8 @@ describe("Test PawnStorage", function () {
   beforeEach(async function () {
     [owner, addr1] = await ethers.getSigners();
     pawnStorage = await ethers.getContractFactory("PawnStorage");
-    deployedPawnStorage = await pawnStorage.deploy();
+    deployedPawnStorage = await pawnStorage.connect(owner).deploy();
+    deployedPawnStorage.connect(owner).addTrustedCaller(owner);
   });
 
   it("should deploy with no items", async function () {
@@ -33,7 +34,7 @@ describe("Test PawnStorage", function () {
     let itemId;
 
     beforeEach(async function () {
-      const tx = await deployedPawnStorage.createItem(
+      const tx = await deployedPawnStorage.connect(owner).createItem(
         addr1,
         "testName",
         "https://test_image.com",
@@ -67,7 +68,7 @@ describe("Test PawnStorage", function () {
     });
 
     it("should update an item's details", async function () {
-      const tx = await deployedPawnStorage.updateItem(
+      const tx = await deployedPawnStorage.connect(owner).updateItem(
         itemId,
         "newName",
         "https://new_link.com",
@@ -92,7 +93,7 @@ describe("Test PawnStorage", function () {
     });
 
     it("should delete an item", async function () {
-      const tx = await deployedPawnStorage.deleteItem(itemId);
+      const tx = await deployedPawnStorage.connect(owner).deleteItem(itemId);
       await tx.wait();
       const item = await deployedPawnStorage.getItem(itemId);
       expect(item.owner).to.equal(ethers.ZeroAddress);
