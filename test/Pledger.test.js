@@ -5,6 +5,7 @@ describe("Pledger Contract", function () {
   let owner, addr1, addr2;
   let pawnStorage, deployedPawnStorage;
   let pledger, deployedPledger;
+  let pawnbroker, deployedPawnbroker, pawnbrokerAddress;
 
   beforeEach(async function () {
     [owner, addr1, addr2] = await ethers.getSigners();
@@ -15,11 +16,17 @@ describe("Pledger Contract", function () {
     await deployedPawnStorage.waitForDeployment();
     pawnStorageAddress = await deployedPawnStorage.getAddress();
 
+    pawnbroker = await ethers.getContractFactory("Pawnbroker");
+    deployedPawnbroker = await pawnbroker.connect(owner).deploy(pawnStorageAddress);
+    await deployedPawnbroker.waitForDeployment();
+    pawnbrokerAddress = await deployedPawnbroker.getAddress();
+
     pledger = await ethers.getContractFactory("Pledger");
-    deployedPledger = await pledger.connect(owner).deploy(pawnStorageAddress);
+    deployedPledger = await pledger.connect(owner).deploy(pawnStorageAddress, pawnbrokerAddress);
     await deployedPledger.waitForDeployment();
 
     await deployedPawnStorage.connect(owner).addTrustedCaller(await deployedPledger.getAddress());
+    await deployedPawnStorage.connect(owner).addTrustedCaller(owner);
   });
 
   describe("test Pledger CRUDs", function () {
@@ -144,6 +151,52 @@ describe("Pledger Contract", function () {
         "Sender must be the item owner"
       );
     });
+
+    describe("test claim processes", function () {
+      this.beforeEach(async function () {
+        await deployedPawnStorage.connect(owner).setStatus(itemId, 1);
+      });
+
+      it("Should correctly update item status to IN_DELIVERY upon accepting claim", async function () {
+        await deployedPledger.connect(addr1).acceptClaim(itemId);
+        expect(await deployedPawnStorage.getItemStatus(itemId)).to.be.equal(2);
+      });
+
+      it("Should revert if another user attempts to accept claim on item he does not own", async function () {
+        await expect(deployedPledger.connect(addr2).acceptClaim(itemId)).to.be.revertedWith(
+          "Sender must be the item owner"
+        );
+      });
+    });
+
+    describe("test redemption process", function () {
+      this.beforeEach(async function () {
+        await deployedPawnStorage.connect(owner).setStatus(itemId, 3);
+        await deployedPawnStorage.connect(owner).setTakenBy(itemId, owner);
+
+        const blockNum = await ethers.provider.getBlockNumber();
+        const block = await ethers.provider.getBlock(blockNum);
+        const currentTimestamp = block.timestamp;
+        await deployedPawnStorage.connect(owner).setTakenAt(itemId, currentTimestamp);
+      });
+
+      it("Should correctly update item to IN_REDEMPTION upon initiating redemption", async function () {
+        await deployedPledger
+          .connect(addr1)
+          .redeemItem(itemId, { value: itemData.redemptionPrice });
+        const updatedStatus = await deployedPawnStorage.getItemStatus(itemId);
+        expect(updatedStatus).to.be.equal(4);
+
+        const pawnbrokerBalance = await ethers.provider.getBalance(pawnbrokerAddress);
+        expect(pawnbrokerBalance).to.be.equal(itemData.redemptionPrice);
+      });
+
+      it("Should revert if another user attempts to initiate claim on item he does not own", async function () {
+        await expect(
+          deployedPledger.connect(addr2).redeemItem(itemId, { value: itemData.redemptionPrice })
+        ).to.be.revertedWith("Sender must be the item owner");
+      });
+    });
   });
 
   describe("multi-users scenario", function () {
@@ -190,7 +243,7 @@ describe("Pledger Contract", function () {
         );
 
       const [receipt1, receipt2] = await Promise.all([tx1.wait(), tx2.wait()]);
-      
+
       item1Id = (await deployedPawnStorage.nextItemId()) - BigInt(2);
       item2Id = (await deployedPawnStorage.nextItemId()) - BigInt(1);
     });
@@ -207,16 +260,16 @@ describe("Pledger Contract", function () {
 
       expect(addr1List[0].owner).to.equal(addr1);
       expect(addr2List[0].owner).to.equal(addr2);
-     });
+    });
 
-     it("should not affect other users when deleting", async function () {
+    it("should not affect other users when deleting", async function () {
       await deployedPledger.connect(addr1).deleteMyItem(item1Id);
-      
+
       const addr1List = await deployedPledger.connect(addr1).getMyList();
       const addr2List = await deployedPledger.connect(addr2).getMyList();
 
       expect(addr1List.length).to.equal(0);
       expect(addr2List.length).to.equal(1);
-     })
+    });
   });
 });
