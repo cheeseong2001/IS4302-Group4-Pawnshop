@@ -10,7 +10,8 @@ contract PawnStorage {
         CLAIMED,
         IN_REDEMPTION,
         IN_DELIVERY_RETURN, // NOT REUSING IN_DELIVERY for redemption. this is to prevent unauthorised function calls that uses enum value IN_DELIVERY
-        RETURNED
+        RETURNED,
+        END_OF_TRANSACTION
     }
 
     // ---- Struct ----

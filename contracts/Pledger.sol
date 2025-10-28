@@ -38,7 +38,7 @@ contract Pledger is PawnshopCommon {
         uint256 claimedTime = pawnStorageContract.getTakenAt(itemId);
         uint256 redemptionPeriod = pawnStorageContract.getRedemptionPeriod(itemId);
         require(
-            claimedTime < currentTime && currentTime <= claimedTime + redemptionPeriod,
+            claimedTime < currentTime && currentTime <= claimedTime + redemptionPeriod * 24 * 60 * 60,
             "Cannot redeem item outside of redemption period"
         );
         _;
@@ -156,12 +156,6 @@ contract Pledger is PawnshopCommon {
     function confirmItemDelivered(
         uint256 itemId
     ) external itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_DELIVERY_RETURN) {
-        (, uint256 redemption, uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
-        address itemTaker = pawnStorageContract.getItemTaker(itemId);
-
-        (bool success, ) = payable(itemTaker).call{value: redemption + punishment}("");
-        require(success, "Transfer failed");
-
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.RETURNED);
     }
 }
