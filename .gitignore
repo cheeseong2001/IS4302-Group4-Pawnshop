@@ -20,3 +20,4 @@ ignition/deployments/chain-31337
 /deployments
 
 .DS_Store
+.prettierrc.json
