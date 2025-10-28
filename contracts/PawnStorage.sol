@@ -215,4 +215,22 @@ contract PawnStorage {
         PawnItem storage item = allItems[itemId];
         item.takenAt = time;
     }
+
+    function addItemIdToTakerList(uint256 itemId) external trustedCallerOnly {
+        address takerAddress = getItemTaker(itemId);
+        takerItems[takerAddress].push(itemId);
+    }
+
+    function removeItemIdFromTakerList(uint256 itemId) external trustedCallerOnly {
+        address takerAddress = getItemTaker(itemId);
+        uint256[] storage items = takerItems[takerAddress];
+
+        for (uint256 i = 0; i < items.length; i++) {
+            if (items[i] == itemId) {
+                items[i] = items[items.length - 1];
+                items.pop();
+                break;
+            }
+        }
+    }
 }
