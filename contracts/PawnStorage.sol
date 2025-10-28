@@ -6,9 +6,10 @@ contract PawnStorage {
     enum ItemStatus {
         LISTED,
         IN_NEGOTIATION,
-        DELIVERED,
-        TAKEN,
-        REDEEMED,
+        IN_DELIVERY,
+        CLAIMED,
+        IN_REDEMPTION,
+        IN_DELIVERY_RETURN, // NOT REUSING IN_DELIVERY for redemption. this is to prevent unauthorised function calls that uses enum value IN_DELIVERY
         RETURNED
     }
 
@@ -23,7 +24,8 @@ contract PawnStorage {
         uint256 punishmentPrice; // in wei ether
         uint256 redemptionPeriod; // in days
         ItemStatus itemStatus;
-        uint256 takenAt;
+        address otherParty; // used to track who is currently trying to claim
+        uint256 takenAt; // used to track who actually claimed if they accepted it
         address takenBy;
     }
 
@@ -57,6 +59,7 @@ contract PawnStorage {
             punishmentPrice: punishmentPrice,
             redemptionPeriod: redemptionPeriod,
             itemStatus: ItemStatus.LISTED,
+            otherParty: address(0),
             takenAt: 0,
             takenBy: address(0)
         });
@@ -117,18 +120,28 @@ contract PawnStorage {
         return items;
     }
 
-    function getItemName(
-        uint256 _itemId
-    ) external view returns (string memory) {
+    function getItemName(uint256 _itemId) external view returns (string memory) {
         return allItems[_itemId].itemName;
     }
 
-    function getItemUrl(uint256 _itemId) external view returns (string memory) {
+    function getItemUrl(uint256 _itemId) public view returns (string memory) {
         return allItems[_itemId].itemUrl;
     }
 
     function getItemOwner(uint256 _itemId) public view returns (address) {
         return allItems[_itemId].owner;
+    }
+
+    function getItemTaker(uint256 _itemId) public view returns (address) {
+        return allItems[_itemId].takenBy;
+    }
+
+    function getRedemptionPeriod(uint256 _itemId) public view returns (uint256) {
+        return allItems[_itemId].redemptionPeriod;
+    }
+
+    function getTakenAt(uint256 _itemId) public view returns (uint256) {
+        return allItems[_itemId].takenAt;
     }
 
     function getItemStatus(uint256 _itemId) external view returns (ItemStatus) {
@@ -137,22 +150,17 @@ contract PawnStorage {
 
     function getItemPrices(
         uint256 _itemId
-    )
-        external
-        view
-        returns (
-            uint256 itemPrice,
-            uint256 redemptionPrice,
-            uint256 punishmentPrice
-        )
-    {
+    ) external view returns (uint256 itemPrice, uint256 redemptionPrice, uint256 punishmentPrice) {
         PawnItem memory item = getItem(_itemId);
         return (item.itemPrice, item.redemptionPrice, item.punishmentPrice);
     }
 
-    function getItemsByOwner(
-        address ownerAddress
-    ) public view returns (PawnItem[] memory) {
+    function getOtherParty(uint256 _itemId) external view returns (address) {
+        PawnItem memory item = getItem(_itemId);
+        return item.otherParty;
+    }
+
+    function getItemsByOwner(address ownerAddress) public view returns (PawnItem[] memory) {
         uint256 numOfItemsOwned = ownerItems[ownerAddress].length;
         PawnItem[] memory ownedItems = new PawnItem[](numOfItemsOwned);
 
@@ -160,5 +168,35 @@ contract PawnStorage {
             ownedItems[i] = getItem(ownerItems[ownerAddress][i]);
         }
         return ownedItems;
+    }
+
+    function getItemsByTaker(address takerAddress) public view returns (PawnItem[] memory) {
+        uint256 numOfItemsClaimed = takerItems[takerAddress].length;
+        PawnItem[] memory claimedItems = new PawnItem[](numOfItemsClaimed);
+
+        for (uint256 i = 0; i < numOfItemsClaimed; i++) {
+            claimedItems[i] = getItem(takerItems[takerAddress][i]);
+        }
+        return claimedItems;
+    }
+
+    function setStatus(uint256 itemId, ItemStatus newStatus) external {
+        PawnItem storage item = allItems[itemId];
+        item.itemStatus = newStatus;
+    }
+
+    function setOtherParty(uint256 itemId, address otherPartyAddress) external {
+        PawnItem storage item = allItems[itemId];
+        item.otherParty = otherPartyAddress;
+    }
+
+    function setTakenBy(uint256 itemId, address taker) external {
+        PawnItem storage item = allItems[itemId];
+        item.takenBy = taker;
+    }
+
+    function setTakenAt(uint256 itemId, uint256 time) external {
+        PawnItem storage item = allItems[itemId];
+        item.takenAt = time;
     }
 }
