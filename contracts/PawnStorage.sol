@@ -36,8 +36,24 @@ contract PawnStorage {
     uint public nextItemId;
     address public owner;
 
+    mapping(address => bool) public trustedCallers;
+
     constructor() {
         owner = msg.sender;
+    }
+
+    modifier contractOwnerOnly() {
+        require(msg.sender == owner, "Sender must be the contract owner");
+        _;
+    }
+
+    modifier trustedCallerOnly() {
+        require(trustedCallers[msg.sender] == true, "Cannot call function because untrusted source");
+        _;
+    }
+
+    function addTrustedCaller(address trustedCaller) external contractOwnerOnly {
+        trustedCallers[trustedCaller] = true;
     }
 
     function createItem(
@@ -48,7 +64,7 @@ contract PawnStorage {
         uint256 redemptionPrice,
         uint256 punishmentPrice,
         uint256 redemptionPeriod
-    ) external returns (uint256) {
+    ) external trustedCallerOnly returns (uint256) {
         PawnItem memory newItem = PawnItem({
             itemId: nextItemId,
             owner: itemOwner,
@@ -68,7 +84,7 @@ contract PawnStorage {
         return newItem.itemId;
     }
 
-    function storeItem(PawnItem memory item) public {
+    function storeItem(PawnItem memory item) internal trustedCallerOnly {
         allItems[nextItemId] = item;
         ownerItems[item.owner].push(nextItemId);
         nextItemId++;
@@ -82,7 +98,7 @@ contract PawnStorage {
         uint256 redemptionPrice,
         uint256 punishmentPrice,
         uint256 redemptionPeriod
-    ) external returns (PawnItem memory) {
+    ) external trustedCallerOnly returns (PawnItem memory) {
         PawnItem storage item = allItems[itemId];
         item.itemName = itemName;
         item.itemUrl = itemUrl;
@@ -94,7 +110,7 @@ contract PawnStorage {
         return getItem(itemId);
     }
 
-    function deleteItem(uint256 itemId) external {
+    function deleteItem(uint256 itemId) external trustedCallerOnly {
         address itemOwner = getItemOwner(itemId);
         delete allItems[itemId];
 
@@ -120,7 +136,7 @@ contract PawnStorage {
         return items;
     }
 
-    function getItemName(uint256 _itemId) external view returns (string memory) {
+    function getItemName(uint256 _itemId) public view returns (string memory) {
         return allItems[_itemId].itemName;
     }
 
@@ -144,7 +160,7 @@ contract PawnStorage {
         return allItems[_itemId].takenAt;
     }
 
-    function getItemStatus(uint256 _itemId) external view returns (ItemStatus) {
+    function getItemStatus(uint256 _itemId) public view returns (ItemStatus) {
         return allItems[_itemId].itemStatus;
     }
 
@@ -155,7 +171,7 @@ contract PawnStorage {
         return (item.itemPrice, item.redemptionPrice, item.punishmentPrice);
     }
 
-    function getOtherParty(uint256 _itemId) external view returns (address) {
+    function getOtherParty(uint256 _itemId) public view returns (address) {
         PawnItem memory item = getItem(_itemId);
         return item.otherParty;
     }
@@ -180,22 +196,22 @@ contract PawnStorage {
         return claimedItems;
     }
 
-    function setStatus(uint256 itemId, ItemStatus newStatus) external {
+    function setStatus(uint256 itemId, ItemStatus newStatus) external trustedCallerOnly {
         PawnItem storage item = allItems[itemId];
         item.itemStatus = newStatus;
     }
 
-    function setOtherParty(uint256 itemId, address otherPartyAddress) external {
+    function setOtherParty(uint256 itemId, address otherPartyAddress) external trustedCallerOnly {
         PawnItem storage item = allItems[itemId];
         item.otherParty = otherPartyAddress;
     }
 
-    function setTakenBy(uint256 itemId, address taker) external {
+    function setTakenBy(uint256 itemId, address taker) external trustedCallerOnly {
         PawnItem storage item = allItems[itemId];
         item.takenBy = taker;
     }
 
-    function setTakenAt(uint256 itemId, uint256 time) external {
+    function setTakenAt(uint256 itemId, uint256 time) external trustedCallerOnly {
         PawnItem storage item = allItems[itemId];
         item.takenAt = time;
     }
