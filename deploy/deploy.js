@@ -1,31 +1,32 @@
 module.exports = async ({ getNamedAccounts, deployments }) => {
-  const { deploy } = deployments;
+  const { deploy, execute } = deployments;
   const { deployer } = await getNamedAccounts();
 
   console.log("Deploying contracts with account:", deployer);
 
-  // Deploy Dice
-  const pawnShopItems = await deploy("PawnshopItems", {
+  const pawnStorageContract = await deploy("PawnStorage", {
     from: deployer,
     args: [],
     log: true,
   });
+  console.log("pawnStorageContract deployed to:", pawnStorageContract.address);
 
-  console.log("pawnShopItems deployed to:", pawnShopItems.address);
-  const pawnShop = await deploy("Pawnshop", {
+  const pawnbrokerContract = await deploy("Pawnbroker", {
     from: deployer,
-    args: [pawnShopItems.address],
+    args: [pawnStorageContract.address],
     log: true,
   });
-  console.log("pawnShop deployed to:", pawnShop.address);
+  console.log("pawnbrokerContract deployed to:", pawnbrokerContract.address);
 
-  // Set authorized pawnshop in PawnshopItems contract
-  const pawnShopItemsContract = await ethers.getContractAt(
-    "PawnshopItems",
-    pawnShopItems.address
-  );
-  await pawnShopItemsContract.setAuthorizedPawnshop(pawnShop.address);
-  console.log("Set authorized pawnshop to:", pawnShop.address);
+  const pledgerContract = await deploy("Pledger", {
+    from: deployer,
+    args: [pawnStorageContract.address, pawnbrokerContract.address],
+    log: true,
+  });
+  console.log("pledgerContract deployed to:", pledgerContract.address);
+
+  await execute("PawnStorage", { from: deployer }, "addTrustedCaller", pledgerContract.address);
+  await execute("PawnStorage", { from: deployer }, "addTrustedCaller", pawnbrokerContract.address);
 };
 
-module.exports.tags = ["PawnshopItems", "Pawnshop"];
+module.exports.tags = ["Pawnshop"];
