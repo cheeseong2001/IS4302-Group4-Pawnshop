@@ -3,7 +3,7 @@ const { ethers } = require("hardhat");
 
 describe("Pledger Contract", function () {
   let owner, addr1, addr2;
-  let pawnStorage, deployedPawnStorage;
+  let pawnStorage, deployedPawnStorage, pawnStorageAddress;
   let pledger, deployedPledger;
   let pawnbroker, deployedPawnbroker, pawnbrokerAddress;
 
@@ -22,10 +22,11 @@ describe("Pledger Contract", function () {
     pawnbrokerAddress = await deployedPawnbroker.getAddress();
 
     pledger = await ethers.getContractFactory("Pledger");
-    deployedPledger = await pledger.connect(owner).deploy(pawnStorageAddress, pawnbrokerAddress);
+    deployedPledger = await pledger.connect(owner).deploy(pawnStorageAddress);
     await deployedPledger.waitForDeployment();
 
     await deployedPawnStorage.connect(owner).addTrustedCaller(await deployedPledger.getAddress());
+    await deployedPawnStorage.connect(owner).addTrustedCaller(await deployedPawnbroker.getAddress());
     await deployedPawnStorage.connect(owner).addTrustedCaller(owner);
   });
 
@@ -187,8 +188,9 @@ describe("Pledger Contract", function () {
         const updatedStatus = await deployedPawnStorage.getItemStatus(itemId);
         expect(updatedStatus).to.be.equal(4);
 
-        const pawnbrokerBalance = await ethers.provider.getBalance(pawnbrokerAddress);
-        expect(pawnbrokerBalance).to.be.equal(itemData.redemptionPrice);
+        // ETH should now be in PawnStorage escrow, not Pawnbroker
+        const escrowBalance = await deployedPawnStorage.getEscrowBalance(itemId);
+        expect(escrowBalance).to.be.equal(itemData.redemptionPrice);
       });
 
       it("Should revert if another user attempts to initiate claim on item he does not own", async function () {

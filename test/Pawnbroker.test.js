@@ -1,9 +1,9 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-describe("Pledger Contract", function () {
+describe("Pawnbroker Contract", function () {
   let owner, addr1, addr2;
-  let pawnStorage, deployedPawnStorage;
+  let pawnStorage, deployedPawnStorage, pawnStorageAddress;
   let pawnbroker, deployedPawnbroker, pawnbrokerAddress;
   let itemId, totalCost;
 
@@ -14,7 +14,7 @@ describe("Pledger Contract", function () {
     pawnStorage = await ethers.getContractFactory("PawnStorage");
     deployedPawnStorage = await pawnStorage.connect(owner).deploy();
     await deployedPawnStorage.waitForDeployment();
-    const pawnStorageAddress = await deployedPawnStorage.getAddress();
+    pawnStorageAddress = await deployedPawnStorage.getAddress();
 
     pawnbroker = await ethers.getContractFactory("Pawnbroker");
     deployedPawnbroker = await pawnbroker.connect(owner).deploy(pawnStorageAddress);
@@ -22,7 +22,7 @@ describe("Pledger Contract", function () {
     pawnbrokerAddress = await deployedPawnbroker.getAddress();
 
     await deployedPawnStorage.connect(owner).addTrustedCaller(pawnbrokerAddress);
-    await deployedPawnStorage.connect(owner).addTrustedCaller(owner); // allow owner to have permissions create items
+    await deployedPawnStorage.connect(owner).addTrustedCaller(owner); 
 
     // we assume the item is already there
     // since Pawnbroker only can perform actions when items are listed
@@ -58,8 +58,9 @@ describe("Pledger Contract", function () {
       const itemStatus = await deployedPawnStorage.getItemStatus(itemId);
       expect(itemStatus).to.be.equal(1); // status should be IN_NEGOTIATION
 
-      const balance = await ethers.provider.getBalance(pawnbrokerAddress);
-      expect(balance).to.be.equal(totalCost);
+      // ETH should be in PawnStorage escrow, not Pawnbroker contract
+      const escrowBalance = await deployedPawnStorage.getEscrowBalance(itemId);
+      expect(escrowBalance).to.be.equal(totalCost);
     });
 
     it("Should revert when insufficent ether provided", async function () {
@@ -73,8 +74,9 @@ describe("Pledger Contract", function () {
         .connect(addr1)
         .claimItem(itemId, { value: ethers.parseEther("2.0") });
 
-      const balance = await ethers.provider.getBalance(pawnbrokerAddress);
-      expect(balance).to.be.equal(totalCost);
+      // ETH should be in PawnStorage escrow, not Pawnbroker contract
+      const escrowBalance = await deployedPawnStorage.getEscrowBalance(itemId);
+      expect(escrowBalance).to.be.equal(totalCost);
     });
 
     it("Should be able to withdraw claim after claim declaration", async function () {
@@ -88,8 +90,10 @@ describe("Pledger Contract", function () {
 
       const tx2 = await deployedPawnbroker.connect(addr1).withdrawClaim(itemId);
       const receipt = await tx2.wait();
-      const contractBalanceAfterWithdraw = await ethers.provider.getBalance(pawnbrokerAddress);
-      expect(contractBalanceAfterWithdraw).to.be.equal(0);
+      
+      // Escrow should be empty after withdrawal
+      const escrowBalanceAfterWithdraw = await deployedPawnStorage.getEscrowBalance(itemId);
+      expect(escrowBalanceAfterWithdraw).to.be.equal(0);
 
       // calculate addr1 change in amount should only be gas
       const addr1BalanceAfterWithdraw = await ethers.provider.getBalance(addr1);
@@ -112,6 +116,8 @@ describe("Pledger Contract", function () {
     });
 
     it("Should update item details upon delivery confirmation", async function () {
+      const ownerBalanceBefore = await ethers.provider.getBalance(owner);
+      
       await deployedPawnbroker.connect(addr1).confirmItemDelivered(itemId);
       const item = await deployedPawnbroker.connect(addr1).getItem(itemId);
       expect(item.itemStatus).to.be.equal(3);
@@ -120,6 +126,14 @@ describe("Pledger Contract", function () {
 
       const takerList = await deployedPawnbroker.connect(addr1).getMyClaimedList();
       expect(takerList.length).to.be.equal(1);
+
+      // Owner should have received the itemPrice
+      const ownerBalanceAfter = await ethers.provider.getBalance(owner);
+      expect(ownerBalanceAfter).to.be.equal(ownerBalanceBefore + itemData.itemPrice);
+
+      // Punishment should still be in escrow
+      const escrowBalance = await deployedPawnStorage.getEscrowBalance(itemId);
+      expect(escrowBalance).to.be.equal(itemData.punishmentPrice);
     });
 
     it("Should revert if item status is not IN_DELIVERY", async function () {
@@ -154,6 +168,45 @@ describe("Pledger Contract", function () {
       await expect(
         deployedPawnbroker.connect(addr1).confirmItemDelivered(itemId)
       ).to.be.revertedWith("Item status incorrect");
+    });
+  });
+
+  describe("test Pawnbroker claim amount after return", function () {
+    beforeEach(async function () {
+      // Set up complete flow: claim -> deliver -> redeem -> return -> returned
+      await deployedPawnbroker.connect(addr1).claimItem(itemId, { value: totalCost });
+      await deployedPawnStorage.connect(owner).setStatus(itemId, 2); // IN_DELIVERY
+      await deployedPawnbroker.connect(addr1).confirmItemDelivered(itemId);
+      await deployedPawnStorage.connect(owner).setStatus(itemId, 4); // IN_REDEMPTION
+      
+      // Simulate owner redeeming by depositing redemption price to escrow
+      await deployedPawnStorage.connect(owner).depositToEscrow(itemId, { value: itemData.redemptionPrice });
+      
+      await deployedPawnbroker.connect(addr1).returnItem(itemId);
+      await deployedPawnStorage.connect(owner).setStatus(itemId, 6); // RETURNED
+    });
+
+    it("Should allow taker to claim redemption amount + punishment", async function () {
+      const addr1BalanceBefore = await ethers.provider.getBalance(addr1);
+      
+      const tx = await deployedPawnbroker.connect(addr1).claimAmount(itemId);
+      const receipt = await tx.wait();
+      
+      const addr1BalanceAfter = await ethers.provider.getBalance(addr1);
+      const gasUsed = BigInt(receipt.gasUsed);
+      const gasPrice = BigInt(tx.gasPrice);
+      const gasCost = gasUsed * gasPrice;
+
+      const expectedAmount = itemData.redemptionPrice + itemData.punishmentPrice;
+      expect(addr1BalanceAfter).to.be.equal(addr1BalanceBefore - gasCost + expectedAmount);
+
+      // Escrow should be cleared
+      const escrowBalance = await deployedPawnStorage.getEscrowBalance(itemId);
+      expect(escrowBalance).to.be.equal(0);
+
+      // Status should be END_OF_TRANSACTION
+      const item = await deployedPawnbroker.getItem(itemId);
+      expect(item.itemStatus).to.be.equal(7);
     });
   });
 

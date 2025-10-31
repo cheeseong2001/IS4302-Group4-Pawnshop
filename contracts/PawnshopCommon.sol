@@ -6,7 +6,7 @@ contract PawnshopCommon {
     PawnStorage public pawnStorageContract;
     address public owner;
 
-    constructor(address _pawnStorageAddress) {
+    constructor(address payable _pawnStorageAddress) {
         require(_pawnStorageAddress != address(0), "Invalid storage address");
         pawnStorageContract = PawnStorage(_pawnStorageAddress);
         owner = msg.sender;
