@@ -20,7 +20,7 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
 
   const pledgerContract = await deploy("Pledger", {
     from: deployer,
-    args: [pawnStorageContract.address, pawnbrokerContract.address],
+    args: [pawnStorageContract.address],
     log: true,
   });
   console.log("pledgerContract deployed to:", pledgerContract.address);
