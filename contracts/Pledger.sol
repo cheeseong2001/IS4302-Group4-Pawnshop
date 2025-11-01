@@ -21,11 +21,7 @@ contract Pledger is PawnshopCommon {
         uint256 redemptionPeriod;
     }
 
-    address public pawnbrokerContract;
-
-    constructor(address _pawnStorageAddress, address _pawnbrokerAddress) PawnshopCommon(_pawnStorageAddress) {
-        pawnbrokerContract = _pawnbrokerAddress;
-    }
+    constructor(address payable _pawnStorageAddress) PawnshopCommon(_pawnStorageAddress) {}
 
     // ---- Modifiers ----
     modifier itemOwnerOnly(uint256 itemId) {
@@ -125,11 +121,6 @@ contract Pledger is PawnshopCommon {
     //     require(success, "Transfer failed");
     // }
 
-    function transferToPawnbrokerContract(uint256 amount) internal {
-        (bool success, ) = payable(pawnbrokerContract).call{value: amount}("");
-        require(success, "Transfer to pawnbroker contract failed");
-    }
-
     function redeemItem(
         uint256 itemId
     )
@@ -143,6 +134,10 @@ contract Pledger is PawnshopCommon {
 
         require(msg.value >= redemption, "Insufficient ether to redeem");
 
+        // Deposit redemption amount to storage contract
+        pawnStorageContract.depositToEscrow{value: redemption}(itemId);
+
+        // Return excess
         uint256 toReturn = msg.value - redemption;
         if (toReturn > 0) {
             (bool success, ) = payable(msg.sender).call{value: toReturn}("");
@@ -150,7 +145,6 @@ contract Pledger is PawnshopCommon {
         }
 
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_REDEMPTION);
-        transferToPawnbrokerContract(redemption);
     }
 
     function confirmItemDelivered(
@@ -158,4 +152,7 @@ contract Pledger is PawnshopCommon {
     ) external itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_DELIVERY_RETURN) {
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.RETURNED);
     }
+
+    // Allow receiving ETH for any edge cases
+    receive() external payable {}
 }

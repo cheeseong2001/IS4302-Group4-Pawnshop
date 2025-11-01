@@ -8,7 +8,7 @@ contract Pawnbroker is PawnshopCommon {
     event ClaimAccepted(uint256 indexed itemId, address indexed owner);
     event ItemDelivered(uint256 indexed itemId, address indexed taker);
 
-    constructor(address _pawnStorageAddress) PawnshopCommon(_pawnStorageAddress) {}
+    constructor(address payable _pawnStorageAddress) PawnshopCommon(_pawnStorageAddress) {}
 
     // ---- Modifiers ----
     modifier itemTakerOnly(uint256 itemId) {
@@ -31,7 +31,6 @@ contract Pawnbroker is PawnshopCommon {
     }
 
     function startClaimProcess(uint256 itemId) internal {
-        // Helper function to update details upon claim request
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_NEGOTIATION);
         pawnStorageContract.setOtherParty(itemId, msg.sender);
     }
@@ -40,10 +39,13 @@ contract Pawnbroker is PawnshopCommon {
         uint256 itemId
     ) external payable notItemOwner(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.LISTED) {
         (uint256 price, , uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
+        uint256 requiredAmount = price + punishment;
 
-        require(msg.value >= (price + punishment), "Insufficient ether to claim");
+        require(msg.value >= requiredAmount, "Insufficient ether to claim");
 
-        uint256 toReturn = msg.value - (price + punishment);
+        pawnStorageContract.depositToEscrow{value: requiredAmount}(itemId);
+
+        uint256 toReturn = msg.value - requiredAmount;
         if (toReturn > 0) {
             (bool success, ) = payable(msg.sender).call{value: toReturn}("");
             require(success, "Transfer failed");
@@ -56,8 +58,9 @@ contract Pawnbroker is PawnshopCommon {
         uint256 itemId
     ) public claimInitiatorOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_NEGOTIATION) {
         (uint256 price, , uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
-        (bool success, ) = payable(msg.sender).call{value: price + punishment}("");
-        require(success, "Transfer failed");
+        uint256 refundAmount = price + punishment;
+        
+        pawnStorageContract.withdrawFromEscrow(itemId, msg.sender, refundAmount);
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.LISTED);
     }
 
@@ -67,8 +70,7 @@ contract Pawnbroker is PawnshopCommon {
         (uint256 price, , ) = pawnStorageContract.getItemPrices(itemId);
         address itemOwner = pawnStorageContract.getItemOwner(itemId);
 
-        (bool success, ) = payable(itemOwner).call{value: price}("");
-        require(success, "Transfer failed");
+        pawnStorageContract.withdrawFromEscrow(itemId, itemOwner, price);
 
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.CLAIMED);
         pawnStorageContract.setTakenBy(itemId, msg.sender);
@@ -87,12 +89,13 @@ contract Pawnbroker is PawnshopCommon {
         uint256 itemId
     ) external itemTakerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.RETURNED) {
         (, uint256 redemption, uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
-        (bool success, ) = payable(msg.sender).call{value: redemption + punishment}("");
-        require(success, "Transfer failed");
+        uint256 totalAmount = redemption + punishment;
+        
+        pawnStorageContract.withdrawFromEscrow(itemId, msg.sender, totalAmount);
+        pawnStorageContract.clearEscrow(itemId);
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.END_OF_TRANSACTION);
     }
 
-    receive() external payable {
-        // pawnbroker contract will the main point of contact for releasing eth
-    }
+    // Allow receiving ETH for any edge cases, but primary storage is in PawnStorage
+    receive() external payable {}
 }

@@ -9,7 +9,7 @@ contract PawnStorage {
         IN_DELIVERY,
         CLAIMED,
         IN_REDEMPTION,
-        IN_DELIVERY_RETURN, // NOT REUSING IN_DELIVERY for redemption. this is to prevent unauthorised function calls that uses enum value IN_DELIVERY
+        IN_DELIVERY_RETURN,
         RETURNED,
         END_OF_TRANSACTION
     }
@@ -20,23 +20,25 @@ contract PawnStorage {
         address owner;
         string itemName;
         string itemUrl;
-        uint256 itemPrice; // in wei ether
-        uint256 redemptionPrice; // in wei ether
-        uint256 punishmentPrice; // in wei ether
-        uint256 redemptionPeriod; // in days
+        uint256 itemPrice;
+        uint256 redemptionPrice;
+        uint256 punishmentPrice;
+        uint256 redemptionPeriod;
         ItemStatus itemStatus;
-        address otherParty; // used to track who is currently trying to claim
-        uint256 takenAt; // used to track who actually claimed if they accepted it
+        address otherParty;
+        uint256 takenAt;
         address takenBy;
     }
 
-    mapping(uint256 => PawnItem) internal allItems; // for all items listed
-    mapping(address => uint256[]) internal ownerItems; // for list of items put up by owners
-    mapping(address => uint256[]) internal takerItems; // for list of items taken by takers
+    mapping(uint256 => PawnItem) internal allItems;
+    mapping(address => uint256[]) internal ownerItems;
+    mapping(address => uint256[]) internal takerItems;
+    
+    // Track escrowed funds per item
+    mapping(uint256 => uint256) internal itemEscrow;
 
     uint public nextItemId;
     address public owner;
-
     mapping(address => bool) public trustedCallers;
 
     constructor() {
@@ -85,7 +87,7 @@ contract PawnStorage {
         return newItem.itemId;
     }
 
-    function storeItem(PawnItem memory item) internal trustedCallerOnly {
+    function storeItem(PawnItem memory item) internal {
         allItems[nextItemId] = item;
         ownerItems[item.owner].push(nextItemId);
         nextItemId++;
@@ -124,6 +126,32 @@ contract PawnStorage {
             }
         }
     }
+    
+    function depositToEscrow(uint256 itemId) external payable trustedCallerOnly {
+        itemEscrow[itemId] += msg.value;
+    }
+
+    function withdrawFromEscrow(
+        uint256 itemId,
+        address recipient,
+        uint256 amount
+    ) external trustedCallerOnly {
+        require(itemEscrow[itemId] >= amount, "Insufficient escrow balance");
+        itemEscrow[itemId] -= amount;
+        
+        (bool success, ) = payable(recipient).call{value: amount}("");
+        require(success, "Transfer failed");
+    }
+
+    function getEscrowBalance(uint256 itemId) external view returns (uint256) {
+        return itemEscrow[itemId];
+    }
+
+    function clearEscrow(uint256 itemId) external trustedCallerOnly {
+        itemEscrow[itemId] = 0;
+    }
+
+    // ---- Getter Functions ----
 
     function getItem(uint id) public view returns (PawnItem memory) {
         return allItems[id];
@@ -234,4 +262,6 @@ contract PawnStorage {
             }
         }
     }
+
+    receive() external payable {}
 }
