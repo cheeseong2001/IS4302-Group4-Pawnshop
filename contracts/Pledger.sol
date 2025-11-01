@@ -100,7 +100,7 @@ contract Pledger is PawnshopCommon {
     function acceptClaim(
         uint256 itemId
     ) public itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_NEGOTIATION) {
-        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_DELIVERY);
+        pawnStorageContract.updateToNextStatus(itemId);
 
         // Moved the taker details to the Pawnbroker side -> have to ensure pawnbroker receives the item first
         // address otherParty = pawnStorageContract.getOtherParty(itemId);
@@ -144,13 +144,13 @@ contract Pledger is PawnshopCommon {
             require(success, "Transfer failed");
         }
 
-        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_REDEMPTION);
+        pawnStorageContract.updateToNextStatus(itemId);
     }
 
     function confirmItemDelivered(
         uint256 itemId
     ) external itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_DELIVERY_RETURN) {
-        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.RETURNED);
+        pawnStorageContract.updateToNextStatus(itemId);
     }
 
     // Allow receiving ETH for any edge cases

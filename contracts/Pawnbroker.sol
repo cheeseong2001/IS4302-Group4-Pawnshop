@@ -31,7 +31,7 @@ contract Pawnbroker is PawnshopCommon {
     }
 
     function startClaimProcess(uint256 itemId) internal {
-        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_NEGOTIATION);
+        pawnStorageContract.updateToNextStatus(itemId);
         pawnStorageContract.setOtherParty(itemId, msg.sender);
     }
 
@@ -59,9 +59,9 @@ contract Pawnbroker is PawnshopCommon {
     ) public claimInitiatorOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_NEGOTIATION) {
         (uint256 price, , uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
         uint256 refundAmount = price + punishment;
-        
+
         pawnStorageContract.withdrawFromEscrow(itemId, msg.sender, refundAmount);
-        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.LISTED);
+        pawnStorageContract.resetStatus(itemId);
     }
 
     function confirmItemDelivered(
@@ -72,7 +72,7 @@ contract Pawnbroker is PawnshopCommon {
 
         pawnStorageContract.withdrawFromEscrow(itemId, itemOwner, price);
 
-        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.CLAIMED);
+        pawnStorageContract.updateToNextStatus(itemId);
         pawnStorageContract.setTakenBy(itemId, msg.sender);
         pawnStorageContract.setTakenAt(itemId, block.timestamp);
         pawnStorageContract.addItemIdToTakerList(itemId);
@@ -81,7 +81,7 @@ contract Pawnbroker is PawnshopCommon {
     function returnItem(
         uint256 itemId
     ) external itemTakerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_REDEMPTION) {
-        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.IN_DELIVERY_RETURN);
+        pawnStorageContract.updateToNextStatus(itemId);
         pawnStorageContract.removeItemIdFromTakerList(itemId);
     }
 
@@ -90,10 +90,10 @@ contract Pawnbroker is PawnshopCommon {
     ) external itemTakerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.RETURNED) {
         (, uint256 redemption, uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
         uint256 totalAmount = redemption + punishment;
-        
+
         pawnStorageContract.withdrawFromEscrow(itemId, msg.sender, totalAmount);
         pawnStorageContract.clearEscrow(itemId);
-        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.END_OF_TRANSACTION);
+        pawnStorageContract.updateToNextStatus(itemId);
     }
 
     // Allow receiving ETH for any edge cases, but primary storage is in PawnStorage
