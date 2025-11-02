@@ -33,7 +33,7 @@ contract PawnStorage {
     mapping(uint256 => PawnItem) internal allItems;
     mapping(address => uint256[]) internal ownerItems;
     mapping(address => uint256[]) internal takerItems;
-    
+
     // Track escrowed funds per item
     mapping(uint256 => uint256) internal itemEscrow;
 
@@ -126,19 +126,15 @@ contract PawnStorage {
             }
         }
     }
-    
+
     function depositToEscrow(uint256 itemId) external payable trustedCallerOnly {
         itemEscrow[itemId] += msg.value;
     }
 
-    function withdrawFromEscrow(
-        uint256 itemId,
-        address recipient,
-        uint256 amount
-    ) external trustedCallerOnly {
+    function withdrawFromEscrow(uint256 itemId, address recipient, uint256 amount) external trustedCallerOnly {
         require(itemEscrow[itemId] >= amount, "Insufficient escrow balance");
         itemEscrow[itemId] -= amount;
-        
+
         (bool success, ) = payable(recipient).call{value: amount}("");
         require(success, "Transfer failed");
     }
@@ -226,8 +222,21 @@ contract PawnStorage {
     }
 
     function setStatus(uint256 itemId, ItemStatus newStatus) external trustedCallerOnly {
+        // used by tests to explicitly set statuses
         PawnItem storage item = allItems[itemId];
         item.itemStatus = newStatus;
+    }
+
+    function updateToNextStatus(uint256 itemId) external trustedCallerOnly {
+        PawnItem storage item = allItems[itemId];
+        uint nextStatus = uint(item.itemStatus) + 1;
+        require(nextStatus <= uint(ItemStatus.END_OF_TRANSACTION), "Cannot increment stage beyond End of Transaction");
+        item.itemStatus = ItemStatus(nextStatus);
+    }
+
+    function resetStatus(uint256 itemId) external trustedCallerOnly {
+        PawnItem storage item = allItems[itemId];
+        item.itemStatus = ItemStatus.LISTED;
     }
 
     function setOtherParty(uint256 itemId, address otherPartyAddress) external trustedCallerOnly {
