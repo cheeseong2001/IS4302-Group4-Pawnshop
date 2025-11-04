@@ -34,15 +34,9 @@ describe("Test PawnStorage", function () {
     let itemId;
 
     beforeEach(async function () {
-      const tx = await deployedPawnStorage.connect(owner).createItem(
-        addr1,
-        "testName",
-        "https://test_image.com",
-        1000,
-        2000,
-        3000,
-        7
-      );
+      const tx = await deployedPawnStorage
+        .connect(owner)
+        .createItem(addr1, "testName", "https://test_image.com", 1000, 2000, 3000, 7);
 
       await tx.wait();
       itemId = (await deployedPawnStorage.nextItemId()) - BigInt(1);
@@ -68,15 +62,9 @@ describe("Test PawnStorage", function () {
     });
 
     it("should update an item's details", async function () {
-      const tx = await deployedPawnStorage.connect(owner).updateItem(
-        itemId,
-        "newName",
-        "https://new_link.com",
-        4000,
-        5000,
-        6000,
-        10
-      );
+      const tx = await deployedPawnStorage
+        .connect(owner)
+        .updateItem(itemId, "newName", "https://new_link.com", 4000, 5000, 6000, 10);
       await tx.wait();
 
       const item = await deployedPawnStorage.getItem(itemId);
@@ -109,6 +97,58 @@ describe("Test PawnStorage", function () {
 
       const updatedItemList = await deployedPawnStorage.getItemsByOwner(addr1);
       expect(updatedItemList).to.deep.equal([]);
+    });
+  });
+
+  describe("Test getAllItems function", function () {
+    let itemId1, itemId2;
+
+    beforeEach(async function () {
+      const tx1 = await deployedPawnStorage
+        .connect(owner)
+        .createItem(addr1, "testName1", "https://test_image.com", 1000, 2000, 3000, 7);
+
+      await tx1.wait();
+      itemId1 = (await deployedPawnStorage.nextItemId()) - BigInt(1);
+
+      const tx2 = await deployedPawnStorage
+        .connect(owner)
+        .createItem(addr1, "testName2", "https://test_image.org", 1000, 2000, 3000, 7);
+
+      await tx2.wait();
+      itemId2 = (await deployedPawnStorage.nextItemId()) - BigInt(1);
+    });
+
+    it("Should return correct all items length", async function () {
+      const allItemList = await deployedPawnStorage.getAllItems();
+      expect(allItemList.length).to.equal(2);
+    });
+
+    it("Should return correct all items length when 1 is deleted", async function () {
+      const tx = await deployedPawnStorage.deleteItem(itemId1);
+      await tx.wait();
+
+      const allItemList = await deployedPawnStorage.getAllItems();
+      expect(allItemList.length).to.equal(1);
+    });
+
+    it("Should return correct all items length when 1 is not in LISTED state", async function () {
+      const tx = await deployedPawnStorage.setStatus(itemId1, 1);
+      await tx.wait();
+
+      const allItemList = await deployedPawnStorage.getAllItems();
+      expect(allItemList.length).to.equal(1);
+    });
+
+    it("Should return 0 length when all items are either deleted or not in LISTED state", async function () {
+      const tx1 = await deployedPawnStorage.deleteItem(itemId1);
+      await tx1.wait();
+
+      const tx2 = await deployedPawnStorage.setStatus(itemId2, 1);
+      await tx2.wait();
+
+      const allItemList = await deployedPawnStorage.getAllItems();
+      expect(allItemList.length).to.equal(0);
     });
   });
 });
