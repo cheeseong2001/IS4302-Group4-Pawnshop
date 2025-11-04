@@ -153,6 +153,26 @@ contract Pledger is PawnshopCommon {
         pawnStorageContract.updateToNextStatus(itemId);
     }
 
+    function getOwnerPunishmentFee(
+        uint256 itemId
+    ) external itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.CLAIMED) {
+        uint256 currentTime = block.timestamp;
+        uint256 claimedTime = pawnStorageContract.getTakenAt(itemId);
+        uint256 redemptionPeriod = pawnStorageContract.getRedemptionPeriod(itemId);
+        
+        require(
+            currentTime > claimedTime + redemptionPeriod * 24 * 60 * 60,
+            "Cannot claim punishment fee during redemption period"
+        );
+
+        (, , uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
+        
+        pawnStorageContract.withdrawFromEscrow(itemId, msg.sender, punishment);
+        pawnStorageContract.clearEscrow(itemId);
+        pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.END_OF_TRANSACTION);
+    }
+
+
     // Allow receiving ETH for any edge cases
     receive() external payable {}
 }
