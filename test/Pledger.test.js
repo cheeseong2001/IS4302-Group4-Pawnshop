@@ -16,12 +16,6 @@ describe("Pledger Contract", function () {
     await deployedPawnStorage.waitForDeployment();
     pawnStorageAddress = await deployedPawnStorage.getAddress();
 
-    // Deploy Pawnbroker (no longer needs to be passed to Pledger)
-    pawnbroker = await ethers.getContractFactory("Pawnbroker");
-    deployedPawnbroker = await pawnbroker.connect(owner).deploy(pawnStorageAddress);
-    await deployedPawnbroker.waitForDeployment();
-    pawnbrokerAddress = await deployedPawnbroker.getAddress();
-
     // Deploy Pledger with only PawnStorage address
     pledger = await ethers.getContractFactory("Pledger");
     deployedPledger = await pledger.connect(owner).deploy(pawnStorageAddress);
@@ -29,7 +23,6 @@ describe("Pledger Contract", function () {
 
     // Add trusted callers
     await deployedPawnStorage.connect(owner).addTrustedCaller(await deployedPledger.getAddress());
-    await deployedPawnStorage.connect(owner).addTrustedCaller(await deployedPawnbroker.getAddress());
     await deployedPawnStorage.connect(owner).addTrustedCaller(owner);
   });
 

@@ -154,9 +154,31 @@ contract PawnStorage {
     }
 
     function getAllItems() public view returns (PawnItem[] memory) {
-        PawnItem[] memory items = new PawnItem[](nextItemId);
-        for (uint i = 0; i < nextItemId; i++) {
-            items[i] = allItems[i];
+        uint i = 0;
+        uint validItemsCount = 0;
+
+        for (i = 0; i < nextItemId; i++) {
+            PawnItem memory item = allItems[i];
+            if (item.owner == address(0) || item.itemStatus != ItemStatus.LISTED) {
+                // deleted item -> default zero address
+                // or if it's not in LISTED state, then it shouldn't appear
+                continue;
+            }
+
+            validItemsCount++;
+        }
+
+        PawnItem[] memory items = new PawnItem[](validItemsCount);
+        uint256 j = 0; // iterator for storing
+        for (i = 0; i < nextItemId; i++) {
+            PawnItem memory itemToAdd = allItems[i];
+            if (itemToAdd.owner == address(0) || itemToAdd.itemStatus != ItemStatus.LISTED) {
+                // deleted item -> default zero address
+                // or if it's not in LISTED state, then it shouldn't appear
+                continue;
+            }
+            items[j] = itemToAdd;
+            j++;
         }
         return items;
     }
