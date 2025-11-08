@@ -27,7 +27,27 @@ contract Pawnbroker is PawnshopCommon {
     }
 
     function getMyClaimedList() external view returns (PawnStorage.PawnItem[] memory) {
-        return pawnStorageContract.getItemsByTaker(msg.sender);
+        // Get items where I'm the taker (already claimed and confirmed - CLAIMED status and beyond)
+        PawnStorage.PawnItem[] memory takenItems = pawnStorageContract.getItemsByTaker(msg.sender);
+
+        // Get items where I'm the otherParty (in negotiation or delivery - IN_NEGOTIATION, IN_DELIVERY)
+        PawnStorage.PawnItem[] memory negotiatingItems = pawnStorageContract.getItemsByOtherParty(msg.sender);
+
+        // Merge both arrays
+        uint256 totalLength = takenItems.length + negotiatingItems.length;
+        PawnStorage.PawnItem[] memory allItems = new PawnStorage.PawnItem[](totalLength);
+
+        uint256 index = 0;
+        for (uint256 i = 0; i < takenItems.length; i++) {
+            allItems[index] = takenItems[i];
+            index++;
+        }
+        for (uint256 i = 0; i < negotiatingItems.length; i++) {
+            allItems[index] = negotiatingItems[i];
+            index++;
+        }
+
+        return allItems;
     }
 
     function startClaimProcess(uint256 itemId) internal {
@@ -62,6 +82,9 @@ contract Pawnbroker is PawnshopCommon {
 
         pawnStorageContract.withdrawFromEscrow(itemId, msg.sender, refundAmount);
         pawnStorageContract.resetStatus(itemId);
+
+        // Clear otherParty when claim is withdrawn
+        pawnStorageContract.setOtherParty(itemId, address(0));
     }
 
     function confirmItemDelivered(
@@ -76,6 +99,9 @@ contract Pawnbroker is PawnshopCommon {
         pawnStorageContract.setTakenBy(itemId, msg.sender);
         pawnStorageContract.setTakenAt(itemId, block.timestamp);
         pawnStorageContract.addItemIdToTakerList(itemId);
+
+        // Clear otherParty since negotiation/delivery phase is complete
+        pawnStorageContract.setOtherParty(itemId, address(0));
     }
 
     function returnItem(

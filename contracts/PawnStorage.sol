@@ -243,6 +243,30 @@ contract PawnStorage {
         return claimedItems;
     }
 
+    function getItemsByOtherParty(address otherPartyAddress) public view returns (PawnItem[] memory) {
+        uint256 matchingCount = 0;
+
+        // First pass: count matching items
+        for (uint256 i = 0; i < nextItemId; i++) {
+            PawnItem memory item = allItems[i];
+            if (item.owner != address(0) && item.otherParty == otherPartyAddress) {
+                matchingCount++;
+            }
+        }
+
+        // Second pass: collect matching items
+        PawnItem[] memory matchingItems = new PawnItem[](matchingCount);
+        uint256 j = 0;
+        for (uint256 i = 0; i < nextItemId; i++) {
+            PawnItem memory item = allItems[i];
+            if (item.owner != address(0) && item.otherParty == otherPartyAddress) {
+                matchingItems[j] = item;
+                j++;
+            }
+        }
+        return matchingItems;
+    }
+
     function setStatus(uint256 itemId, ItemStatus newStatus) external trustedCallerOnly {
         // used by tests to explicitly set statuses
         PawnItem storage item = allItems[itemId];
