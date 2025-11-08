@@ -166,7 +166,7 @@ describe("Pawnbroker Contract", function () {
     it("Should revert if item status is not IN_DELIVERY", async function () {
       await deployedPawnStorage.connect(owner).setStatus(itemId, 0);
       await expect(
-        deployedPawnbroker.connect(addr1).confirmItemDelivered(itemId)
+        deployedPawnbroker.connect(addr1).returnItem(itemId)
       ).to.be.revertedWith("Item status incorrect");
     });
 
