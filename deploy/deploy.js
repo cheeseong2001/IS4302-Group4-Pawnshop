@@ -27,6 +27,9 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
 
   await execute("PawnStorage", { from: deployer }, "addTrustedCaller", pledgerContract.address);
   await execute("PawnStorage", { from: deployer }, "addTrustedCaller", pawnbrokerContract.address);
+  
+  // Ideally this should not be the case, but it is required for the demo to alter recorded times in PawnItem
+  await execute("PawnStorage", { from: deployer }, "addTrustedCaller", deployer); 
 };
 
 module.exports.tags = ["Pawnshop"];
