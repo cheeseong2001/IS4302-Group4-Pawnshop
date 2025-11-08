@@ -90,7 +90,7 @@ describe("Pawnbroker Contract", function () {
 
       const tx2 = await deployedPawnbroker.connect(addr1).withdrawClaim(itemId);
       const receipt = await tx2.wait();
-      
+
       // Escrow should be empty after withdrawal
       const escrowBalanceAfterWithdraw = await deployedPawnStorage.getEscrowBalance(itemId);
       expect(escrowBalanceAfterWithdraw).to.be.equal(0);
@@ -117,7 +117,7 @@ describe("Pawnbroker Contract", function () {
 
     it("Should update item details upon delivery confirmation", async function () {
       const ownerBalanceBefore = await ethers.provider.getBalance(owner);
-      
+
       await deployedPawnbroker.connect(addr1).confirmItemDelivered(itemId);
       const item = await deployedPawnbroker.connect(addr1).getItem(itemId);
       expect(item.itemStatus).to.be.equal(3);
@@ -169,45 +169,60 @@ describe("Pawnbroker Contract", function () {
         deployedPawnbroker.connect(addr1).confirmItemDelivered(itemId)
       ).to.be.revertedWith("Item status incorrect");
     });
+
+    it("Should revert if item is not returned on time", async function () {
+      const returnByTime = await deployedPawnStorage.getReturnBy(itemId);
+
+      await network.provider.send("evm_setNextBlockTimestamp", [Number(returnByTime + BigInt(1))]); // set time to past returnBy time
+      await network.provider.send("evm_mine");
+
+      await expect(deployedPawnbroker.connect(addr1).returnItem(itemId)).to.be.revertedWith("Unable to return item, time is past return by date");
+    })
   });
 
-  describe("test Pawnbroker claim amount after return", function () {
+  describe("test claim back punishment fee", function () {
     beforeEach(async function () {
-      // Set up complete flow: claim -> deliver -> redeem -> return -> returned
+      // assume the item claim has been accepted
+      // use owner account to explicitly set item status to be IN_REDEMPTION
       await deployedPawnbroker.connect(addr1).claimItem(itemId, { value: totalCost });
-      await deployedPawnStorage.connect(owner).setStatus(itemId, 2); // IN_DELIVERY
+      await deployedPawnStorage.connect(owner).setStatus(itemId, 2); // set status to IN_DELIVERY
       await deployedPawnbroker.connect(addr1).confirmItemDelivered(itemId);
-      await deployedPawnStorage.connect(owner).setStatus(itemId, 4); // IN_REDEMPTION
-      
-      // Simulate owner redeeming by depositing redemption price to escrow
-      await deployedPawnStorage.connect(owner).depositToEscrow(itemId, { value: itemData.redemptionPrice });
-      
-      await deployedPawnbroker.connect(addr1).returnItem(itemId);
-      await deployedPawnStorage.connect(owner).setStatus(itemId, 6); // RETURNED
     });
 
-    it("Should allow taker to claim redemption amount + punishment", async function () {
+    it("Should be able to get back punishment fee if item owner does not start redemption process and is past redemption period", async function () {
+      const returnByTime = await deployedPawnStorage.getReturnBy(itemId);
       const addr1BalanceBefore = await ethers.provider.getBalance(addr1);
-      
-      const tx = await deployedPawnbroker.connect(addr1).claimAmount(itemId);
+
+      await network.provider.send("evm_increaseTime", [(itemData.redemptionPeriod + 1) * 24 * 60 * 60]); // skip forward in time to 1 day past last redemption day
+      await network.provider.send("evm_mine");
+
+      const tx = await deployedPawnbroker.connect(addr1).getPunishmentFee(itemId);
       const receipt = await tx.wait();
-      
+
       const addr1BalanceAfter = await ethers.provider.getBalance(addr1);
       const gasUsed = BigInt(receipt.gasUsed);
       const gasPrice = BigInt(tx.gasPrice);
       const gasCost = gasUsed * gasPrice;
 
-      const expectedAmount = itemData.redemptionPrice + itemData.punishmentPrice;
-      expect(addr1BalanceAfter).to.be.equal(addr1BalanceBefore - gasCost + expectedAmount);
+      expect(addr1BalanceAfter).to.be.equal(
+        addr1BalanceBefore - gasCost + itemData.punishmentPrice
+      );
 
-      // Escrow should be cleared
       const escrowBalance = await deployedPawnStorage.getEscrowBalance(itemId);
       expect(escrowBalance).to.be.equal(0);
 
-      // Status should be END_OF_TRANSACTION
-      const item = await deployedPawnbroker.getItem(itemId);
-      expect(item.itemStatus).to.be.equal(7);
+      const item = await deployedPawnStorage.getItem(itemId);
+      expect(item.itemStatus).to.be.equal(6);
     });
+
+    it("Should revert when redemption period is not over", async function () {
+      const returnByTime = await deployedPawnStorage.getReturnBy(itemId);
+      await network.provider.send("evm_increaseTime", [1 * 24 * 60 * 60]); // skip forward in time by 1 day
+      await network.provider.send("evm_mine");
+      await expect(deployedPawnbroker.connect(addr1).getPunishmentFee(itemId)).to.be.revertedWith(
+        "Cannot claim punishment fee during redemption period"
+      );
+    })
   });
 
   describe("test illegal actions", function () {
@@ -235,87 +250,6 @@ describe("Pawnbroker Contract", function () {
       await expect(deployedPawnbroker.connect(addr2).returnItem(itemId)).to.be.revertedWith(
         "Sender must be the item taker"
       );
-    });
-  });
-
-  describe("test retrievePunishmentFee", function () {
-    let punishmentItemId;
-
-    beforeEach(async function () {
-      // Create a new item for punishment fee tests
-      const tx = await deployedPawnStorage
-        .connect(owner)
-        .createItem(
-          owner,
-          itemData.itemName,
-          itemData.itemUrl,
-          itemData.itemPrice,
-          itemData.redemptionPrice,
-          itemData.punishmentPrice,
-          itemData.redemptionPeriod
-        );
-      await tx.wait();
-      punishmentItemId = (await deployedPawnStorage.nextItemId()) - BigInt(1);
-
-      const totalCost = itemData.itemPrice + itemData.punishmentPrice;
-      await deployedPawnbroker.connect(addr1).claimItem(punishmentItemId, { value: totalCost });
-      await deployedPawnStorage.connect(owner).setStatus(punishmentItemId, 2); // IN_DELIVERY
-      await deployedPawnbroker.connect(addr1).confirmItemDelivered(punishmentItemId);
-      // Now status is CLAIMED and punishment is in escrow
-    });
-
-    it("Should allow taker to retrieve punishment fee after redemption period", async function () {
-      await network.provider.send("evm_increaseTime", [31 * 24 * 60 * 60]);
-      await network.provider.send("evm_mine");
-
-      const addr1BalanceBefore = await ethers.provider.getBalance(addr1);
-
-      const tx = await deployedPawnbroker.connect(addr1).retrievePunishmentFee(punishmentItemId);
-      const receipt = await tx.wait();
-
-      const addr1BalanceAfter = await ethers.provider.getBalance(addr1);
-      const gasUsed = BigInt(receipt.gasUsed);
-      const gasPrice = BigInt(tx.gasPrice);
-      const gasCost = gasUsed * gasPrice;
-
-      expect(addr1BalanceAfter).to.be.equal(
-        addr1BalanceBefore - gasCost + itemData.punishmentPrice
-      );
-
-      const escrowBalance = await deployedPawnStorage.getEscrowBalance(punishmentItemId);
-      expect(escrowBalance).to.be.equal(0);
-
-      const item = await deployedPawnbroker.getItem(punishmentItemId);
-      expect(item.itemStatus).to.be.equal(7);
-
-      const takerList = await deployedPawnbroker.connect(addr1).getMyClaimedList();
-      expect(takerList.length).to.be.equal(0);
-    });
-
-    it("Should revert if called during redemption period", async function () {
-      await expect(
-        deployedPawnbroker.connect(addr1).retrievePunishmentFee(punishmentItemId)
-      ).to.be.revertedWith("Cannot retrieve punishment fee during redemption period");
-    });
-
-    it("Should revert if called by non-taker", async function () {
-      await network.provider.send("evm_increaseTime", [31 * 24 * 60 * 60]);
-      await network.provider.send("evm_mine");
-
-      await expect(
-        deployedPawnbroker.connect(addr2).retrievePunishmentFee(punishmentItemId)
-      ).to.be.revertedWith("Sender must be the item taker");
-    });
-
-    it("Should revert if item status is not CLAIMED", async function () {
-      await deployedPawnStorage.connect(owner).setStatus(punishmentItemId, 0); // LISTED
-
-      await network.provider.send("evm_increaseTime", [31 * 24 * 60 * 60]);
-      await network.provider.send("evm_mine");
-
-      await expect(
-        deployedPawnbroker.connect(addr1).retrievePunishmentFee(punishmentItemId)
-      ).to.be.revertedWith("Item status incorrect");
     });
   });
 });
