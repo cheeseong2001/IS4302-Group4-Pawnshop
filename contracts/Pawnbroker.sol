@@ -26,6 +26,14 @@ contract Pawnbroker is PawnshopCommon {
         _;
     }
 
+    modifier isBeforeReturnByTime(uint256 itemId) {
+        require(
+            pawnStorageContract.getReturnBy(itemId) >= block.timestamp,
+            "Unable to return item, time is past return by date"
+        );
+        _;
+    }
+
     function getMyClaimedList() external view returns (PawnStorage.PawnItem[] memory) {
         // Get items where I'm the taker (already claimed and confirmed - CLAIMED status and beyond)
         PawnStorage.PawnItem[] memory takenItems = pawnStorageContract.getItemsByTaker(msg.sender);
@@ -92,53 +100,46 @@ contract Pawnbroker is PawnshopCommon {
     ) external claimInitiatorOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_DELIVERY) {
         (uint256 price, , ) = pawnStorageContract.getItemPrices(itemId);
         address itemOwner = pawnStorageContract.getItemOwner(itemId);
+        uint256 redemptionPeriodInSeconds = pawnStorageContract.getRedemptionPeriod(itemId) * 24 * 60 * 60;
 
         pawnStorageContract.withdrawFromEscrow(itemId, itemOwner, price);
 
-        pawnStorageContract.updateToNextStatus(itemId);
         pawnStorageContract.setTakenBy(itemId, msg.sender);
         pawnStorageContract.setTakenAt(itemId, block.timestamp);
+        pawnStorageContract.setReturnBy(itemId, block.timestamp + redemptionPeriodInSeconds);
         pawnStorageContract.addItemIdToTakerList(itemId);
 
         // Clear otherParty since negotiation/delivery phase is complete
         pawnStorageContract.setOtherParty(itemId, address(0));
+
+        pawnStorageContract.updateToNextStatus(itemId);
     }
 
     function returnItem(
         uint256 itemId
-    ) external itemTakerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_REDEMPTION) {
+    )
+        external
+        itemTakerOnly(itemId)
+        itemStatusIs(itemId, PawnStorage.ItemStatus.IN_REDEMPTION)
+        isBeforeReturnByTime(itemId)
+    {
         pawnStorageContract.updateToNextStatus(itemId);
         pawnStorageContract.removeItemIdFromTakerList(itemId);
     }
 
-    function claimAmount(
-        uint256 itemId
-    ) external itemTakerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.RETURNED) {
-        (, uint256 redemption, uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
-        uint256 totalAmount = redemption + punishment;
-
-        pawnStorageContract.withdrawFromEscrow(itemId, msg.sender, totalAmount);
-        pawnStorageContract.clearEscrow(itemId);
-        pawnStorageContract.updateToNextStatus(itemId);
-    }
-
-    function retrievePunishmentFee(
+    function getPunishmentFee(
         uint256 itemId
     ) external itemTakerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.CLAIMED) {
+        // This is used when Pledger fails to start redemption process
         uint256 currentTime = block.timestamp;
-        uint256 claimedTime = pawnStorageContract.getTakenAt(itemId);
-        uint256 redemptionPeriod = pawnStorageContract.getRedemptionPeriod(itemId);
-        
-        require(
-            currentTime > claimedTime + redemptionPeriod * 24 * 60 * 60,
-            "Cannot retrieve punishment fee during redemption period"
-        );
+        uint256 returnByTime = pawnStorageContract.getReturnBy(itemId);
+
+        require(currentTime > returnByTime, "Cannot claim punishment fee during redemption period");
 
         (, , uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
-        
-        pawnStorageContract.withdrawFromEscrow(itemId, msg.sender, punishment);
+
+        pawnStorageContract.withdrawFromEscrow(itemId, msg.sender, punishment); // return only the punishment fee -> treat as if taker is buying the item
         pawnStorageContract.clearEscrow(itemId);
-        pawnStorageContract.removeItemIdFromTakerList(itemId);
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.END_OF_TRANSACTION);
     }
 

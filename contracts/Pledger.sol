@@ -108,19 +108,6 @@ contract Pledger is PawnshopCommon {
         // pawnStorageContract.setTakenAt(itemId, block.timestamp);
     }
 
-    // function rejectClaim(
-    //     uint256 itemId
-    // ) public itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_NEGOTIATION) {
-    //     pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.LISTED);
-    //     pawnStorageContract.setOtherParty(itemId, address(0));
-
-    //     // return the amount he sent
-    //     (uint256 price, , uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
-
-    //     (bool success, ) = payable(otherParty).call{value: price + punishment}("");
-    //     require(success, "Transfer failed");
-    // }
-
     function redeemItem(
         uint256 itemId
     )
@@ -144,34 +131,44 @@ contract Pledger is PawnshopCommon {
             require(success, "Transfer failed");
         }
 
+        // to handle grace period for when pledger attempts to claim back on the last day of redemption period
+        // give pawnbroker 7 days to return the item, even if it goes beyond redemption period
+        uint256 returnByTimestamp = block.timestamp + 7 days;
+        if (returnByTimestamp > pawnStorageContract.getReturnBy(itemId)) {
+            pawnStorageContract.setReturnBy(itemId, returnByTimestamp);
+        }
+
         pawnStorageContract.updateToNextStatus(itemId);
     }
 
     function confirmItemDelivered(
         uint256 itemId
     ) external itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_DELIVERY_RETURN) {
+        address takenBy = pawnStorageContract.getItemTaker(itemId);
+
+        (, uint256 redemption, uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
+        uint256 totalAmount = redemption + punishment;
+
+        pawnStorageContract.withdrawFromEscrow(itemId, takenBy, totalAmount);
+        pawnStorageContract.clearEscrow(itemId);
         pawnStorageContract.updateToNextStatus(itemId);
     }
 
-    function getOwnerPunishmentFee(
+    function getPunishmentFee(
         uint256 itemId
-    ) external itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.CLAIMED) {
+    ) external itemOwnerOnly(itemId) itemStatusIs(itemId, PawnStorage.ItemStatus.IN_REDEMPTION) {
+        // This is used when Pawnbroker fails to return item by ReturnBy time
         uint256 currentTime = block.timestamp;
-        uint256 claimedTime = pawnStorageContract.getTakenAt(itemId);
-        uint256 redemptionPeriod = pawnStorageContract.getRedemptionPeriod(itemId);
-        
-        require(
-            currentTime > claimedTime + redemptionPeriod * 24 * 60 * 60,
-            "Cannot claim punishment fee during redemption period"
-        );
+        uint256 returnByTime = pawnStorageContract.getReturnBy(itemId);
 
-        (, , uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
-        
-        pawnStorageContract.withdrawFromEscrow(itemId, msg.sender, punishment);
+        require(currentTime > returnByTime, "Cannot claim punishment fee during redemption period");
+
+        (, uint256 redemption, uint256 punishment) = pawnStorageContract.getItemPrices(itemId);
+
+        pawnStorageContract.withdrawFromEscrow(itemId, msg.sender, redemption + punishment); // return the redemption amount as well
         pawnStorageContract.clearEscrow(itemId);
         pawnStorageContract.setStatus(itemId, PawnStorage.ItemStatus.END_OF_TRANSACTION);
     }
-
 
     // Allow receiving ETH for any edge cases
     receive() external payable {}

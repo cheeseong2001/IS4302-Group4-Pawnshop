@@ -10,7 +10,6 @@ contract PawnStorage {
         CLAIMED,
         IN_REDEMPTION,
         IN_DELIVERY_RETURN,
-        RETURNED,
         END_OF_TRANSACTION
     }
 
@@ -28,6 +27,7 @@ contract PawnStorage {
         address otherParty;
         uint256 takenAt;
         address takenBy;
+        uint256 returnBy;
     }
 
     mapping(uint256 => PawnItem) internal allItems;
@@ -80,7 +80,8 @@ contract PawnStorage {
             itemStatus: ItemStatus.LISTED,
             otherParty: address(0),
             takenAt: 0,
-            takenBy: address(0)
+            takenBy: address(0),
+            returnBy: 0
         });
 
         storeItem(newItem);
@@ -223,6 +224,11 @@ contract PawnStorage {
         return item.otherParty;
     }
 
+    function getReturnBy(uint256 _itemId) public view returns (uint256) {
+        PawnItem memory item = getItem(_itemId);
+        return item.returnBy;
+    }
+
     function getItemsByOwner(address ownerAddress) public view returns (PawnItem[] memory) {
         uint256 numOfItemsOwned = ownerItems[ownerAddress].length;
         PawnItem[] memory ownedItems = new PawnItem[](numOfItemsOwned);
@@ -298,6 +304,11 @@ contract PawnStorage {
     function setTakenAt(uint256 itemId, uint256 time) external trustedCallerOnly {
         PawnItem storage item = allItems[itemId];
         item.takenAt = time;
+    }
+
+    function setReturnBy(uint itemId, uint256 time) external trustedCallerOnly {
+        PawnItem storage item = allItems[itemId];
+        item.returnBy = time;
     }
 
     function addItemIdToTakerList(uint256 itemId) external trustedCallerOnly {
