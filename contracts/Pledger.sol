@@ -134,7 +134,7 @@ contract Pledger is PawnshopCommon {
         // to handle grace period for when pledger attempts to claim back on the last day of redemption period
         // give pawnbroker 7 days to return the item, even if it goes beyond redemption period
         uint256 returnByTimestamp = block.timestamp + 7 days;
-        if (returnByTimestamp < pawnStorageContract.getReturnBy(itemId)) {
+        if (returnByTimestamp > pawnStorageContract.getReturnBy(itemId)) {
             pawnStorageContract.setReturnBy(itemId, returnByTimestamp);
         }
 

@@ -194,6 +194,24 @@ describe("Pledger Contract", function () {
           deployedPledger.connect(addr2).redeemItem(itemId, { value: itemData.redemptionPrice })
         ).to.be.revertedWith("Sender must be the item owner");
       });
+
+      it("Should extend item's returnBy timestamp by 7 days if Pledger redeems late in redemption period", async function () {
+        const blockNum = await ethers.provider.getBlockNumber();
+        const block = await ethers.provider.getBlock(blockNum);
+        const currentTimestamp = block.timestamp;
+        await deployedPawnStorage.connect(owner).setReturnBy(itemId, currentTimestamp);
+        
+        // fast forward to right before redemption period ends
+        await network.provider.send("evm_increaseTime", [29 * 24 * 60 * 60]);
+        await network.provider.send("evm_mine");
+
+        await deployedPledger
+          .connect(addr1)
+          .redeemItem(itemId, { value: itemData.redemptionPrice });
+
+        const newReturnByVal = await deployedPawnStorage.getReturnBy(itemId);
+        expect(newReturnByVal).to.be.closeTo(currentTimestamp + (29 + 7) * 24 * 60 * 60, 2);
+      })
     });
 
     describe("test getPunishmentFee", function () {
